@@ -1,0 +1,8 @@
+<resources>
+    <string name="widget_description">独立选择纪念日与配色，调整大小切换布局，轻触打开详情。</string>
+    <string name="widget_brand">与你 · 纪念日</string>
+    <string name="widget_hint">选择你的纪念</string>
+    <string name="widget_date_hint">轻触设置，选择一个日子</string>
+    <string name="widget_next_hint">下一个年度纪念日</string>
+    <string name="widget_configure">设置</string>
+</resources>

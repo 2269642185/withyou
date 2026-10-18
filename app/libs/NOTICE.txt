@@ -1,0 +1,5 @@
+AndroidX ExifInterface 1.3.7
+Copyright The Android Open Source Project and AndroidX contributors.
+Official project: https://developer.android.com/jetpack/androidx/releases/exifinterface
+Distributed under the Apache License, Version 2.0 (LICENSE-2.0.txt).
+This distribution includes the unmodified official Google Maven binary.
