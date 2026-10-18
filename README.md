@@ -8,7 +8,7 @@
 
 源码与发布仓库：https://github.com/2269642185/withyou
 
-Pages 下载页部署地址：https://2269642185.github.io/withyou/ （仅在 Pages 发布成功后可用）。本机交付文件见 delivery/v1.4.0；GitHub 仓库不保存历史交付目录或签名私钥。
+Pages 下载页部署地址：https://2269642185.github.io/withyou/ （已部署并验证匿名访问）。本机交付文件见 delivery/v1.4.0；GitHub 仓库不保存历史交付目录或签名私钥。
 
 发布只由开发者在用户通知后手动进行；没有自动发版任务。操作与签名注意事项见 [UPDATING.md](UPDATING.md)。其他电脑生成的新 debug 签名不能直接覆盖已安装旧版，请使用原签名。
 
@@ -89,10 +89,10 @@ Android Studio → Open → 选择本工程根目录。Gradle JDK 选择 Embedde
 
 ## 安装与交付
 
-新版位于 `delivery/v1.3.0/`：
+新版位于 `delivery/v1.4.0/`：
 
-- `与你-纪念日-1.3.0-debug.apk`
-- `与你-纪念日-1.3.0-完整工程.zip`
+- `与你-纪念日-1.4.0-debug.apk`
+- `与你-纪念日-1.4.0-完整工程.zip`
 - `VALIDATION.md`、测试报告与运行截图
 
 将 APK 复制到 Android 8.0+ 手机，打开后允许对应来源安装；也可 `adb install -r <APK路径>`。这是开发调试签名体验版，未配置商店发布密钥。安装前建议在旧版导出备份。
@@ -101,7 +101,7 @@ Android Studio → Open → 选择本工程根目录。Gradle JDK 选择 Embedde
 
 ## 验证与边界
 
-实际验证结果见 `delivery/v1.3.0/VALIDATION.md`。本机可通过 `build-local.ps1 -Test` 复核构建、JVM 测试、Lint 和连接设备上的仪器测试。
+本版 19 项单元测试与 26 项模拟器测试通过，另有 1 项包含多条安装安全断言的专项测试通过。实际验证结果见仓库的 `validation/v1.4.0.md`，本机完整证据位于 `delivery/v1.4.0/`。本机可通过 `build-local.ps1 -Test` 复核构建、JVM 测试、Lint 和连接设备上的仪器测试。
 
 **仪器测试会覆盖目标设备中的应用测试数据，只能在专用测试模拟器运行。**
 
