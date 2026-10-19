@@ -1,6 +1,6 @@
 """Manual GitHub publication. Uses the existing Git credential helper, never stores credentials.
 
-Run only after explicit approval to publish this specific version.
+Run only within the user's release authorization, after build and validation pass.
 """
 import argparse
 import json

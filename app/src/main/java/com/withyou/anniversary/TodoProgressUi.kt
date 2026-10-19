@@ -13,7 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,36 +26,35 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 internal fun TodoProgressPanel(book:TodoBook,name:String,date:LocalDate,pending:Boolean) {
-    Surface(shape=RoundedCornerShape(26.dp),color=MaterialTheme.colorScheme.surfaceVariant) {
-        Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-            Text("今天，也在慢慢变好",fontWeight=FontWeight.SemiBold,fontSize=19.sp)
-            val large=LocalConfiguration.current.fontScale>1.3f || LocalConfiguration.current.screenWidthDp<350
-            if(large) {
-                PersonProgress("我 · $name",TodoRules.progress(book,book.uid,date),Modifier.fillMaxWidth())
-                if(book.partnerId.isNotBlank()) PersonProgress("伙伴 · ${book.partnerName}",TodoRules.progress(book,book.partnerId,date),Modifier.fillMaxWidth())
-            } else Row(horizontalArrangement=Arrangement.spacedBy(16.dp)) {
-                PersonProgress("我 · $name",TodoRules.progress(book,book.uid,date),Modifier.weight(1f))
-                if(book.partnerId.isNotBlank()) PersonProgress("伙伴 · ${book.partnerName}",TodoRules.progress(book,book.partnerId,date),Modifier.weight(1f))
-            }
-            val stamp=if(book.syncedAt==0L) "尚未同步" else "上次同步 "+DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(TodoRules.zone).format(Instant.ofEpochMilli(book.syncedAt))
-            Text(if(pending) "本机进度 · 待同步，伙伴进度可能尚未更新" else "$stamp · 伙伴进度仅统计共享事项",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    Surface(modifier=Modifier.testTag("todo_progress_panel"),shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surfaceVariant) {
+        Column(Modifier.fillMaxWidth().padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+            Text("今日进度",fontWeight=FontWeight.SemiBold,style=MaterialTheme.typography.titleSmall)
+            PersonProgress(name.ifBlank {"自己"},TodoRules.progress(book,book.uid,date),"self")
+            if(book.partnerId.isNotBlank()) PersonProgress(book.partnerName.ifBlank {"伙伴"},TodoRules.progress(book,book.partnerId,date),"partner")
+            val stamp=if(book.syncedAt==0L) "尚未同步" else "同步于 "+DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(TodoRules.zone).format(Instant.ofEpochMilli(book.syncedAt))
+            Text(if(pending) "本机变化待同步 · 伙伴进度可能延迟" else "$stamp · 伙伴仅含共享事项",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun PersonProgress(name:String,progress:TodoRules.Progress,modifier:Modifier) {
+private fun PersonProgress(name:String,progress:TodoRules.Progress,key:String) {
     val value by animateFloatAsState(progress.fraction,tween(if(LocalMotionEnabled.current) 450 else 0),label="今日完成进度")
-    Column(modifier,verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer,contentColor=MaterialTheme.colorScheme.primary) {
-                Box(Modifier.size(32.dp),contentAlignment=Alignment.Center) {Text(name.substringAfter(" · ").take(1),fontWeight=FontWeight.Bold)}
+    BoxWithConstraints(Modifier.fillMaxWidth().testTag("progress_row_$key")) {
+        val stacked=androidx.compose.ui.platform.LocalDensity.current.fontScale>1.7f || maxWidth<280.dp && androidx.compose.ui.platform.LocalDensity.current.fontScale>1.3f
+        Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min=30.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer,contentColor=MaterialTheme.colorScheme.primary) {
+                    Box(Modifier.size(24.dp),contentAlignment=Alignment.Center) {Text(String(Character.toChars(name.codePointAt(0))),style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold)}
+                }
+                Text(name,Modifier.weight(1f).testTag("progress_name_$key"),style=MaterialTheme.typography.bodyMedium,maxLines=1,overflow=TextOverflow.Ellipsis)
+                if(!stacked) LinearProgressIndicator(progress={value},modifier=Modifier.weight(.7f).height(4.dp).testTag("progress_bar_$key"),trackColor=MaterialTheme.colorScheme.surface,drawStopIndicator={})
+                Text(if(progress.total==0 && progress.unknown>0) "待同步" else if(progress.total==0) "暂无计划" else "${progress.done} / ${progress.total}",
+                    Modifier.widthIn(min=42.dp,max=108.dp).testTag("progress_count_$key"),style=MaterialTheme.typography.labelLarge,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis,textAlign=androidx.compose.ui.text.style.TextAlign.End)
             }
-            Text(name,style=MaterialTheme.typography.labelLarge)
+            if(stacked) LinearProgressIndicator(progress={value},modifier=Modifier.fillMaxWidth().height(4.dp).testTag("progress_bar_$key"),trackColor=MaterialTheme.colorScheme.surface,drawStopIndicator={})
+            if(progress.unknown>0) Text("${progress.unknown} 项旧版完成日期待同步，暂不计入",style=MaterialTheme.typography.bodySmall)
         }
-        Text(if(progress.total==0 && progress.unknown>0) "完成日期待同步" else if(progress.total==0) "今天还没有计划" else "${progress.done} / ${progress.total} 已完成",fontWeight=FontWeight.SemiBold)
-        if(progress.unknown>0) Text("${progress.unknown} 项旧版完成日期需联网补齐，暂不计入",style=MaterialTheme.typography.bodySmall)
-        LinearProgressIndicator(progress={value},modifier=Modifier.fillMaxWidth().height(6.dp),trackColor=MaterialTheme.colorScheme.surface)
     }
 }
 

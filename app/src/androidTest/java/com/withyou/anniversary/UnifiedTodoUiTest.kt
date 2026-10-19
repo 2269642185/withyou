@@ -33,7 +33,7 @@ class UnifiedTodoUiTest {
                 compose.onNodeWithText("打卡").performClick()
                 compose.waitUntil(20000) {try {compose.onNodeWithText("新增事项").assertIsEnabled();true}catch(_:AssertionError){false}}
                 compose.onNodeWithText("我的").assertDoesNotExist();compose.onNodeWithText("对方的").assertDoesNotExist();compose.onNodeWithText("一起完成").assertDoesNotExist()
-                compose.onNodeWithText("今天，也在慢慢变好").assertExists()
+                compose.onNodeWithText("今日进度").assertExists()
                 compose.waitForIdle();Thread.sleep(400);shell("screencap -p /sdcard/Download/withyou-v16-unified-local.png")
                 compose.onNodeWithText("新增事项").performClick()
                 compose.onNode(hasSetTextAction() and hasText("事项标题")).performTextInput("默认让你看见")

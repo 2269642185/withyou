@@ -50,6 +50,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -180,7 +181,7 @@ fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: M
                 }
             },
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+            Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).clipToBounds()) {
                 if (!ready) CircularProgressIndicator(Modifier.align(Alignment.Center))
                 else PageMotion(route) { when (route) {
                     "home" -> Home(data, today, failed, ::add, ::open, { route = "categories" }, {route="shared"}, homeFilter) { homeFilter=it }

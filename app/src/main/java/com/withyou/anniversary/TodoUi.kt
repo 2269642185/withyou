@@ -68,15 +68,15 @@ fun TodoScreen(vm:TodoViewModel) {
     var historyId by rememberSaveable {mutableStateOf<String?>(null)}
     var actionTask by remember {mutableStateOf<TodoTask?>(null)}
     var confirmDelete by remember {mutableStateOf<TodoTask?>(null)}
-    LazyColumn(Modifier.fillMaxSize().testTag("todo_list"),contentPadding=PaddingValues(24.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+    LazyColumn(Modifier.fillMaxSize().testTag("todo_list"),contentPadding=PaddingValues(horizontal=16.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         item {
             Row(verticalAlignment=Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {Text("把小事，一起坚持",fontSize=27.sp,fontWeight=FontWeight.SemiBold);Text("${date.monthValue} 月 ${date.dayOfMonth} 日 · 上海时间",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                Column(Modifier.weight(1f)) {Text("把小事，一起坚持",fontSize=25.sp,fontWeight=FontWeight.SemiBold);Text("${date.monthValue} 月 ${date.dayOfMonth} 日 · 上海时间",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
                 IconButton(onClick={page="account"}) {Icon(Icons.Outlined.PeopleOutline,"账号与伙伴")}
             }
         }
         item {Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text(state.syncLabel,Modifier.weight(1f),style=MaterialTheme.typography.bodySmall)
+            Text(state.syncLabel,Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             TextButton(onClick={vm.sync(true)},enabled=!state.busy) {Text("刷新")}
             FilledTonalButton(onClick={editId=null;page="editor"},enabled=!state.busy && !state.failed) {Text("新增事项")}
         }}
@@ -97,55 +97,27 @@ fun TodoScreen(vm:TodoViewModel) {
             TextButton(onClick={editId=null;page="editor"},enabled=!state.busy) {Text("写下第一件小事")}
         }}}
         items(tasks,key={it.id}) {task ->
-            val done=TodoRules.complete(book,task,book.uid,date)
-            val partnerDone=TodoRules.complete(book,task,book.partnerId,date)
-            val both=TodoRules.bothComplete(book,task,date)
-            val color by animateColorAsState(if(done && task.owner==book.uid || both) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                animationSpec=androidx.compose.animation.core.tween(if(LocalMotionEnabled.current) 220 else 0),label="打卡完成")
-            Card(Modifier.fillMaxWidth().then(if(LocalMotionEnabled.current) Modifier.animateItem() else Modifier),colors=CardDefaults.cardColors(containerColor=color),shape=RoundedCornerShape(24.dp)) {
-                Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment=Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                            Surface(shape=RoundedCornerShape(10.dp),color=MaterialTheme.colorScheme.secondaryContainer,contentColor=MaterialTheme.colorScheme.primary) {
-                                Text(if(task.kind==TodoKind.SHARED) "♡ 共同事项" else if(task.owner==book.uid) "我 · ${state.session!!.name}" else "伙伴 · ${book.partnerName}",Modifier.padding(horizontal=10.dp,vertical=5.dp),style=MaterialTheme.typography.labelMedium)
-                            }
-                            Text(task.kind.label+if(task.shared) " · 双方可见" else " · 仅自己",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        IconButton(onClick={actionTask=task}) {Icon(Icons.Outlined.MoreHoriz,"事项操作：${task.title}")}
-                    }
-                    Text(task.title,fontSize=21.sp,fontWeight=FontWeight.SemiBold)
-                    if(task.notes.isNotBlank()) Text(task.notes,style=MaterialTheme.typography.bodyMedium)
-                    Text(if(task.kind==TodoKind.TODO) task.due?.let {if(it<date && !TodoRules.complete(book,task,task.owner,date)) "已逾期 · ${it.label()}" else "截止 ${it.label()}"} ?: "没有截止日期" else "每周 "+task.weekdays.sorted().joinToString("、") {"一二三四五六日"[it-1].toString()},style=MaterialTheme.typography.bodySmall)
-                    if(task.kind==TodoKind.SHARED) Text(if(both) "今天，双方都完成了 ♡" else "我：${if(done) "已完成" else "未完成"}  ·  ${book.partnerName}：${if(partnerDone) "已完成" else "未完成"}",style=MaterialTheme.typography.bodyMedium)
-                    if(task.owner==book.uid || task.kind==TodoKind.SHARED) {
-                        val interaction=remember(task.id) {MutableInteractionSource()}
-                        val pressed by interaction.collectIsPressedAsState()
-                        val scale by animateFloatAsState(if(pressed) .975f else 1f,androidx.compose.animation.core.tween(if(LocalMotionEnabled.current) 110 else 0),label="打卡轻按")
-                        FilledTonalButton(onClick={vm.toggle(task,date)},enabled=!state.busy && TodoRules.canCheck(task,book.uid,book.pairId,date),modifier=Modifier.fillMaxWidth().graphicsLayer {scaleX=scale;scaleY=scale},interactionSource=interaction) {
-                            Icon(if(done) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp))
-                            Text(if(!TodoRules.scheduled(task,date)) "今天休息" else if(task.shared && task.pairId!=book.pairId) "原配对已解除" else if(done) "已完成 · 点击取消" else "完成打卡")
-                        }
-                    } else Text(if(partnerDone) "对方已完成" else "对方尚未完成",color=MaterialTheme.colorScheme.primary)
-                }
-            }
+            CompactTodoCard(task,book,state.session!!.name,date,state.busy || state.failed,
+                actionTask?.id==task.id,{actionTask=task},{actionTask=null},
+                {vm.toggle(task,date)},{historyId=task.id;actionTask=null},
+                {editId=task.id;page="editor";actionTask=null},
+                {vm.saveTask(task.copy(archived=true)) {};actionTask=null},
+                {confirmDelete=task;actionTask=null},
+                if(LocalMotionEnabled.current) Modifier.animateItem() else Modifier)
         }
         item {Text("断网时先保存到本机，联网后再同步。历史打卡按上海日期记录。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
     TodoTogetherCelebration(book,date,state.syncLabel.startsWith("已同步") && !state.busy)
-    actionTask?.let {task -> AlertDialog(onDismissRequest={actionTask=null},title={Text(task.title)},text={Column {
-        TextButton(onClick={historyId=task.id;actionTask=null}) {Text("查看打卡记录")}
-        if(task.owner==book.uid) {
-            TextButton(onClick={editId=task.id;page="editor";actionTask=null},enabled=!state.busy) {Text("编辑事项")}
-            TextButton(onClick={vm.saveTask(task.copy(archived=true)) {};actionTask=null},enabled=!state.busy) {Text("归档事项")}
-            TextButton(onClick={confirmDelete=task;actionTask=null},enabled=!state.busy) {Text("删除事项")}
-        }
-    }},confirmButton={TextButton(onClick={actionTask=null}) {Text("关闭")}})}
     confirmDelete?.let {task->AlertDialog(onDismissRequest={confirmDelete=null},title={Text("删除这个事项？")},text={Text("删除会同步给伙伴，历史记录不再显示。此操作不可在 App 内恢复。")},confirmButton={TextButton(onClick={vm.saveTask(task.copy(deleted=true)) {};confirmDelete=null}) {Text("确认删除")}},dismissButton={TextButton(onClick={confirmDelete=null}) {Text("取消")}})}
     historyId?.let {id->
         val checks=book.checks.filter {it.taskId==id && it.done}.sortedByDescending {it.day}
         AlertDialog(onDismissRequest={historyId=null},title={Text("打卡记录")},text={Column(Modifier.heightIn(max=400.dp).verticalScroll(rememberScrollState())) {
+            book.tasks.find {it.id==id}?.let {task->
+                Text(task.title,fontWeight=FontWeight.SemiBold)
+                if(task.notes.isNotBlank()) Text(task.notes,Modifier.padding(vertical=8.dp))
+            }
             if(checks.isEmpty()) Text("还没有完成记录")
-            checks.forEach {Text((if(it.day==LocalDate.of(1970,1,1)) "已完成待办" else it.day.label())+" · "+if(it.user==book.uid) "我" else book.partnerName,Modifier.padding(vertical=6.dp))}
+            checks.forEach {Text((if(it.day==LocalDate.of(1970,1,1)) "已完成待办" else it.day.label())+" · "+if(it.user==book.uid) state.session!!.name else book.partnerName,Modifier.padding(vertical=6.dp))}
         }},confirmButton={TextButton(onClick={historyId=null}) {Text("关闭")}})
     }
 }
