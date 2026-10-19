@@ -21,7 +21,7 @@ App 通过 GitHub Releases 的 `releases/latest/download/update.json` 读取更�
 3. 生成发布文件：
 
 ```powershell
-python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.apk --notes RELEASE-NOTES.md --version 1.4.0 --code 6 --out release-output
+python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.apk --notes RELEASE-NOTES.md --version 1.6.0 --code 8 --out release-output
 ```
 
 4. 将 `release-output/site/` 内容复制至仓库的 `docs/`，提交已验证源码、文档和 docs。不要提交 APK 到 Git 历史。

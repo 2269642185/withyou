@@ -1,0 +1,12 @@
+{
+  "envId": "withyou-sync-d0gg468vheead040b",
+  "functionRoot": ".",
+  "functions": [{
+    "name": "withyou-register",
+    "timeout": 30,
+    "memorySize": 128,
+    "runtime": "Nodejs20.19",
+    "handler": "index.main",
+    "installDependency": true
+  }]
+}

@@ -72,6 +72,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -108,7 +109,9 @@ internal fun LocalDate.label() = format(chineseDate)
 @Composable
 fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: MainViewModel = viewModel()) {
     val updater: UpdateViewModel = viewModel()
+    val todos: TodoViewModel = viewModel()
     val updateState by updater.state.collectAsStateWithLifecycle()
+    val todoState by todos.state.collectAsStateWithLifecycle()
     val data by vm.data.collectAsStateWithLifecycle()
     val ready by vm.ready.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -133,6 +136,12 @@ fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: M
         var notice by remember { mutableStateOf<String?>(null) }
         var announcedUpdate by rememberSaveable { mutableStateOf(0L) }
         val updateOwner=LocalLifecycleOwner.current
+        LaunchedEffect(updateOwner,todoState.session?.uid,route) {
+            if(todoState.session!=null && route!="editor") updateOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                todos.sync(false)
+                while(true) {delay(5000);todos.sync(false)}
+            }
+        }
         val safeForUpdate by rememberUpdatedState(ready && route in listOf("home","settings"))
         DisposableEffect(updateOwner) {
             val observer=LifecycleEventObserver { _,event -> if(event==Lifecycle.Event.ON_RESUME && safeForUpdate) updater.check(false) }
@@ -164,8 +173,9 @@ fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: M
             containerColor = colors.background,
             snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
-                if (route == "home" || route == "settings") NavigationBar(containerColor = colors.surface) {
+                if (route in listOf("home","todos","settings")) NavigationBar(containerColor = colors.surface) {
                     NavigationBarItem(selected = route == "home", onClick = { route = "home" }, icon = { Icon(Icons.Outlined.FavoriteBorder, null) }, label = { Text("纪念日") })
+                    NavigationBarItem(selected = route == "todos", onClick = { route = "todos" }, icon = { Icon(Icons.Outlined.CheckCircleOutline, null) }, label = { Text("打卡") })
                     NavigationBarItem(selected = route == "settings", onClick = { route = "settings" }, icon = { Icon(Icons.Outlined.Tune, null) }, label = { Text("设置") })
                 }
             },
@@ -173,14 +183,16 @@ fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: M
             Box(Modifier.fillMaxSize().padding(padding)) {
                 if (!ready) CircularProgressIndicator(Modifier.align(Alignment.Center))
                 else PageMotion(route) { when (route) {
-                    "home" -> Home(data, today, failed, ::add, ::open, { route = "categories" }, homeFilter) { homeFilter=it }
+                    "home" -> Home(data, today, failed, ::add, ::open, { route = "categories" }, {route="shared"}, homeFilter) { homeFilter=it }
                     "detail" -> if (record != null) Detail(record, today, vm.repository.photos, busy,
-                        { route = "home" }, { route = "editor" }, { vm.pin(record.id) }, { vm.delete(record.id) { route = "home" } })
+                        { route = "home" }, { route = "editor" }, { vm.pin(record.id) }, { todos.sharedDelete(record) {vm.delete(record.id) { route = "home" }} }, {MemoryShareAction(record,todos) {route="todos"}})
                         else LaunchedEffect(Unit) { route = "home" }
                     "editor" -> key(selected) { Editor(record, data.preferences.defaultMode, today, vm, busy,
-                        { route = if (record == null) "home" else "detail" }, { saved -> vm.save(saved) { selected = saved.id; route = "detail" } }) }
+                        { route = if (record == null) "home" else "detail" }, { saved -> vm.save(saved) { selected = saved.id; route = "detail"; todos.sharedEdit(saved) } }) }
                     "settings" -> Settings(data, vm, busy, {route="updates"}) { notice = it }
                     "updates" -> UpdatesScreen(updater) {route="settings"}
+                    "todos" -> TodoScreen(todos)
+                    "shared" -> SharedMemoriesScreen(todos,data.records,{route="home"},{route="todos"})
                     "categories" -> CategoryManager(data,vm) {route="home"}
                 } }
                 if (busy) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .12f)).clickable(enabled = true, onClick = {}), contentAlignment = Alignment.Center) {
@@ -210,7 +222,7 @@ private fun rememberToday(): LocalDate {
 }
 
 @Composable
-private fun Home(data: AppData, today: LocalDate, failed: Boolean, add: () -> Unit, open: (String) -> Unit, categories: () -> Unit, filter: String, onFilter: (String) -> Unit) {
+private fun Home(data: AppData, today: LocalDate, failed: Boolean, add: () -> Unit, open: (String) -> Unit, categories: () -> Unit, shared: () -> Unit, filter: String, onFilter: (String) -> Unit) {
     val context = LocalContext.current
     val motion=LocalMotionEnabled.current
     val listState=rememberLazyListState()
@@ -240,6 +252,7 @@ private fun Home(data: AppData, today: LocalDate, failed: Boolean, add: () -> Un
                 if(filter!="all" && !panelVisible && categoryName!=null) Text("当前：$categoryName",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelLarge)
             }
         }
+        item(key="shared_entry") {TextButton(onClick=shared) {Icon(Icons.Outlined.PeopleOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("我们的共享")}}
         if(panelVisible) item(key="category_panel") {
             AnimatedVisibility(visibleState=transition,enter=expandVertically(tween(if(motion)200 else 0))+fadeIn(tween(if(motion)160 else 0)),
                 exit=shrinkVertically(tween(if(motion)200 else 0))+fadeOut(tween(if(motion)120 else 0))) {
@@ -373,7 +386,7 @@ fun PageHeading(title: String, back: () -> Unit, action: @Composable RowScope.()
 }
 
 @Composable
-private fun Detail(record: MemoryDay, today: LocalDate, dir: File, busy: Boolean, back: () -> Unit, edit: () -> Unit, pin: () -> Unit, delete: () -> Unit) {
+private fun Detail(record: MemoryDay, today: LocalDate, dir: File, busy: Boolean, back: () -> Unit, edit: () -> Unit, pin: () -> Unit, delete: () -> Unit, share: @Composable () -> Unit = {}) {
     var confirm by remember { mutableStateOf(false) }
     val next = DateRules.nextAnniversary(record.date, today)
     val days = DateRules.untilAnniversary(record.date, today)
@@ -391,6 +404,7 @@ private fun Detail(record: MemoryDay, today: LocalDate, dir: File, busy: Boolean
                     Text("累计与周年倒计时分别计算。未来日期按实际相差天数倒计时；周年当天为 0 天。2 月 29 日在非闰年以 2 月 28 日作为周年日。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 21.sp)
                 }
             }
+            share()
             OutlinedButton(onClick = pin, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.PushPin, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(if(record.pinned) "取消置顶" else "设为首页置顶") }
             TextButton(onClick = { confirm = true }, enabled = !busy, modifier = Modifier.align(Alignment.CenterHorizontally)) { Icon(Icons.Outlined.DeleteOutline, null, tint = MaterialTheme.colorScheme.error); Text("删除这个纪念日", color = MaterialTheme.colorScheme.error) }
         }

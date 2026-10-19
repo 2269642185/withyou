@@ -10,3 +10,9 @@ local.properties
 delivery/
 *.log
 release-output/
+**/node_modules/
+**/__pycache__/
+**/.env
+**/.env.*
+cloudbase/secrets/
+local-secrets/

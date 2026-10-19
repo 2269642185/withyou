@@ -1,0 +1,37 @@
+{
+  "version": "1.6.0",
+  "versionCode": 8,
+  "jvm": {
+    "tests": 27,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "api36Device": {
+    "tests": 34,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "actualCloudDevice": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "sqlCore": 22,
+  "sqlSharing": 17,
+  "actualCloudApi": 15,
+  "additionalActualCloudChecks": 2,
+  "largeFont160DarkMotionDisabled": 3,
+  "finalFocused": 4,
+  "sameSigningCertificate": true,
+  "overlayPreservedFiles": 4,
+  "lint": {
+    "errors": 0,
+    "warnings": 34,
+    "hints": 1
+  },
+  "physicalDualPhonesTested": false,
+  "githubPublished": false
+}

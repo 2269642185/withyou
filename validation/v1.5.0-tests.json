@@ -1,0 +1,37 @@
+{
+  "unit": {
+    "tests": 24,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "device": {
+    "tests": 30,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "evidence": "verification.log; later focused runs replace Gradle device XML"
+  },
+  "cloudDevice": {
+    "tests": 1,
+    "failures": 0,
+    "evidence": "cloud-device-check.log"
+  },
+  "largeFont": {
+    "tests": 1,
+    "failures": 0,
+    "fontScale": 1.6,
+    "evidence": "large-font-ui-tests.xml"
+  },
+  "darkUi": {
+    "tests": 1,
+    "failures": 0,
+    "evidence": "dark-ui-tests.xml"
+  },
+  "finalUi": {
+    "tests": 1,
+    "failures": 0,
+    "includesUnsavedEditorRecreation": true,
+    "evidence": "final-ui-tests.xml"
+  }
+}

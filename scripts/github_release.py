@@ -40,7 +40,9 @@ def main():
     release=api(f'/repos/{args.repo}/releases','POST',{'tag_name':tag,'target_commitish':args.commit,'name':f'与你 · 纪念日 {manifest["versionName"]}',
         'body':manifest['notes'],'draft':True,'prerelease':False})
     upload=release['upload_url'].split('{')[0]
-    for name,mime in [('withyou.apk','application/vnd.android.package-archive'),('update.json','application/json')]:
+    uploads=[('withyou.apk','application/vnd.android.package-archive'),('update.json','application/json')]
+    if (assets/'withyou-source.zip').is_file(): uploads.append(('withyou-source.zip','application/zip'))
+    for name,mime in uploads:
         api(upload+'?name='+name,'POST',raw=(assets/name).read_bytes(),content_type=mime)
     published=api(f'/repos/{args.repo}/releases/{release["id"]}','PATCH',{'draft':False,'make_latest':'true'})
     print(json.dumps({'release':published['html_url'],'version':manifest['versionName']},ensure_ascii=False))
