@@ -58,7 +58,8 @@ fun TodoScreen(vm:TodoViewModel) {
     LaunchedEffect(state.busy,state.book?.pending?.size,page) {if(!state.busy && page!="editor") vm.sync(false)}
     BackHandler(page!="list") {page="list"}
     if(!state.ready) {Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {CircularProgressIndicator()};return}
-    if(state.session==null) {TodoLogin(state,vm);return}
+    if(state.session==null) {EmailLogin(state,vm);return}
+    if(!state.session!!.admitted) {FriendAdmission(state,vm);return}
     val book=state.book ?: return
     if(page=="editor") {
         TodoEditor(book.tasks.find {it.id==editId},book,state.busy,state.message,{page="list"}) {vm.saveTask(it) {page="list"}}
@@ -123,31 +124,6 @@ fun TodoScreen(vm:TodoViewModel) {
 }
 
 @Composable
-private fun TodoLogin(state:TodoState,vm:TodoViewModel) {
-    var register by rememberSaveable {mutableStateOf(false)}
-    var username by rememberSaveable {mutableStateOf("")}
-    var password by remember {mutableStateOf("")}
-    var nickname by rememberSaveable {mutableStateOf("")}
-    var code by remember {mutableStateOf("")}
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
-        Spacer(Modifier.height(16.dp));Icon(Icons.Outlined.CheckCircleOutline,null,Modifier.size(42.dp),tint=MaterialTheme.colorScheme.primary)
-        Text("把小事，一起坚持",fontSize=28.sp,fontWeight=FontWeight.SemiBold)
-        Text("登录后收藏自己的待办，也能和伙伴分享每天的一点进步。")
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {FilterChip(!register,{register=false},label={Text("登录")});FilterChip(register,{register=true},label={Text("注册")})}
-        OutlinedTextField(username,{username=it},label={Text("用户名")},singleLine=true,modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(password,{password=it},label={Text("密码")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),singleLine=true,modifier=Modifier.fillMaxWidth())
-        if(register) {
-            OutlinedTextField(nickname,{nickname=it},label={Text("昵称")},singleLine=true,modifier=Modifier.fillMaxWidth())
-            OutlinedTextField(code,{code=it},label={Text("注册激活码")},visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
-            Text("第一版为受邀双人使用，由应用管理员提供注册激活码，无需短信。密码 8～32 位，包含大小写字母、数字、符号中的至少三类。",style=MaterialTheme.typography.bodySmall)
-        }
-        if(state.message.isNotBlank()) Text(state.message,color=MaterialTheme.colorScheme.primary)
-        Button(onClick={if(register) vm.register(username,password,nickname,code) else vm.login(username,password)},enabled=!state.busy && !state.failed,modifier=Modifier.fillMaxWidth()) {Text(if(state.busy) "请稍候…" else if(register) "创建账号" else "登录打卡")}
-        Text("待办、打卡和配对资料同步到腾讯 CloudBase；纪念日和照片仅在你主动分享后上传。忘记密码可联系应用管理员，不在聊天中发送密码。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
 private fun TodoEditor(existing:TodoTask?,book:TodoBook,busy:Boolean,message:String,back:()->Unit,save:(TodoTask)->Unit) {
     val context=LocalContext.current
     var title by rememberSaveable(existing?.id) {mutableStateOf(existing?.title ?: "")}
@@ -195,6 +171,9 @@ private fun TodoEditor(existing:TodoTask?,book:TodoBook,busy:Boolean,message:Str
 
 @Composable
 private fun TodoAccount(state:TodoState,vm:TodoViewModel,back:()->Unit) {
+    var security by rememberSaveable {mutableStateOf(false)}
+    LaunchedEffect(state.session?.uid) {vm.loadEmail()}
+    if(security) {EmailSecurity(state,vm) {security=false};return}
     val book=state.book ?: return
     var invite by rememberSaveable {mutableStateOf("")}
     var unlink by remember {mutableStateOf(false)}
@@ -206,6 +185,13 @@ private fun TodoAccount(state:TodoState,vm:TodoViewModel,back:()->Unit) {
         IconButton(onClick=back) {Icon(Icons.Outlined.ArrowBack,"返回打卡列表")}
         Text("账号与伙伴",fontSize=27.sp,fontWeight=FontWeight.SemiBold)
         Text("你好，${state.session?.name}",style=MaterialTheme.typography.titleLarge)
+        Text(if(state.contactEmail.isBlank()) "尚未绑定邮箱，可绑定用于找回账号" else "登录邮箱：${state.contactEmail}",style=MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick={security=true},enabled=!state.busy) {Text("账号安全与邮箱")}
+        OutlinedButton(onClick=vm::createFriendLink,enabled=!state.busy) {Text("邀请朋友注册")}
+        if(state.friendLink.isNotBlank()) {
+            Text("注册链接 72 小时内有效，仅供一位新朋友开通账号，不会自动配对。",style=MaterialTheme.typography.bodySmall)
+            TextButton(onClick={clipboard.setText(AnnotatedString(state.friendLink))}) {Text("复制朋友注册链接")}
+        }
         Text(state.syncLabel,style=MaterialTheme.typography.bodySmall)
         if(state.message.isNotBlank()) Text(state.message,color=MaterialTheme.colorScheme.primary)
         if(book.pairId.isNotBlank()) {

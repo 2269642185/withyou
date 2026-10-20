@@ -61,8 +61,8 @@ internal fun writeAtomic(file:AtomicFile, bytes:ByteArray) {
     val stream=file.startWrite()
     try {stream.write(bytes);file.finishWrite(stream)} catch(e:Exception) {file.failWrite(stream);throw e}
 }
-data class TodoSession(val uid:String,val name:String,val access:String,val refresh:String,val expiresAt:Long) {
-    fun json()=JSONObject().put("uid",uid).put("name",name).put("access",access).put("refresh",refresh).put("expires",expiresAt)
+data class TodoSession(val uid:String,val name:String,val access:String,val refresh:String,val expiresAt:Long,val admitted:Boolean=true) {
+    fun json()=JSONObject().put("uid",uid).put("name",name).put("access",access).put("refresh",refresh).put("expires",expiresAt).put("admitted",admitted)
 }
 /** Tokens stay in app-private storage encrypted by a non-exportable Android Keystore key. */
 class TodoSessionStore(context:Context) {
@@ -86,6 +86,6 @@ class TodoSessionStore(context:Context) {
         require(n in 12..16 && bytes.size>n+1)
         val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply {init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,bytes.copyOfRange(1,n+1)))}
         val j=JSONObject(String(cipher.doFinal(bytes.copyOfRange(n+1,bytes.size)),Charsets.UTF_8))
-        return TodoSession(j.getString("uid"),j.getString("name"),j.getString("access"),j.getString("refresh"),j.getLong("expires"))
+        return TodoSession(j.getString("uid"),j.getString("name"),j.getString("access"),j.getString("refresh"),j.getLong("expires"),j.optBoolean("admitted",true))
     }
 }

@@ -14,7 +14,8 @@ import org.json.JSONObject
 import java.time.LocalDate
 
 data class TodoState(val ready:Boolean=false,val session:TodoSession?=null,val book:TodoBook?=null,val busy:Boolean=false,
-    val photoVersion:Long=0,val message:String="",val syncLabel:String="尚未登录",val invitationCode:String="",val failed:Boolean=false)
+    val photoVersion:Long=0,val message:String="",val syncLabel:String="尚未登录",val invitationCode:String="",val failed:Boolean=false,
+    val mailChallenge:EmailChallenge?=null,val contactEmail:String="",val friendLink:String="",val incomingInvite:String="")
 
 class TodoViewModel(app:Application):AndroidViewModel(app) {
     private val store=TodoStore(app)
@@ -24,6 +25,8 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
     private val device=prefs.getString("id",null) ?: TodoCloud.newDeviceId().also {prefs.edit().putString("id",it).apply()}
     private val cloud=TodoCloud(device)
     private val mutex=Mutex()
+    private val emailAuth=EmailAuth(call={path,body,token,method->cloud.request(path,body,token,method=method)})
+    private var bindGrant=""
     private val mutable=MutableStateFlow(TodoState())
     val state=mutable.asStateFlow()
     private var nextAttempt=0L
@@ -49,27 +52,90 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         try {
             val session=sessions.read()
             val book=session?.let {store.read(it.uid)}
-            mutable.value=TodoState(ready=true,session=session,book=book,syncLabel=if(session==null) "尚未登录" else "等待同步")
+            mutable.value=TodoState(ready=true,session=session,book=book,syncLabel=if(session==null) "尚未登录" else "等待同步",incomingInvite=mutable.value.incomingInvite)
         } catch(_:Exception) {mutable.value=TodoState(ready=true,message="本机打卡数据或登录凭据暂时无法读取，请保留应用并检查备份",failed=true)}
     }}}
     private fun act(block:suspend ()->Unit) {viewModelScope.launch {mutex.withLock {
         mutable.value=mutable.value.copy(busy=true,message="")
         try {block()} catch(e:CancellationException) {throw e}
-        catch(e:Exception) {mutable.value=mutable.value.copy(message=if(e is TodoCloudError || e is IllegalArgumentException) e.message.orEmpty() else "操作未完成，请检查网络后重试；已保存的记录仍在本机")}
+        catch(e:Exception) {if(e is TodoCloudError && e.reason.contains("SESSION_REVOKED")) expireSession(e.message.orEmpty()) else mutable.value=mutable.value.copy(message=if(e is TodoCloudError || e is IllegalArgumentException) e.message.orEmpty() else "操作未完成，请检查网络后重试；已保存的记录仍在本机")}
         finally {mutable.value=mutable.value.copy(busy=false)}
     }}}
+    private suspend fun expireSession(message:String) {
+        val old=mutable.value.session
+        withContext(Dispatchers.IO) {sessions.save(null);old?.let {sharedPhotos.clear(it.uid)}}
+        bindGrant=""
+        mutable.value=TodoState(ready=true,message=message)
+    }
     private suspend fun save(book:TodoBook) {
         withContext(Dispatchers.IO) {store.write(book)}
         if(failures==0 && (book.pending.isNotEmpty() || book.shareJobs.isNotEmpty())) nextAttempt=0
         mutable.value=mutable.value.copy(book=book,syncLabel=if(book.pending.isEmpty() && book.shareJobs.isEmpty()) "等待同步" else "等待同步 · ${book.pending.size+book.shareJobs.size} 项")
     }
     fun login(username:String,password:String) = act {
-        require(username.matches(Regex("[A-Za-z0-9][A-Za-z0-9_.-]{1,47}"))) {"用户名使用 2～48 位字母、数字、点、下划线或短横线"}
+        val account=if(username.contains('@')) EmailRules.email(username) else username.trim().also {require(it.matches(Regex("[A-Za-z0-9][A-Za-z0-9_.-]{1,47}"))) {"请输入邮箱或原用户名"}}
         require(password.isNotBlank()) {"请输入密码"}
-        val session=cloud.login(username.trim(),password)
+        val incoming=mutable.value.incomingInvite
+        val session=cloud.login(account,password)
         val book=withContext(Dispatchers.IO) {store.read(session.uid).also {sessions.save(session)}}
-        mutable.value=TodoState(ready=true,session=session,book=book,busy=true,syncLabel="等待同步")
+        mutable.value=TodoState(ready=true,session=session,book=book,busy=true,syncLabel="等待同步",incomingInvite=incoming)
         failures=0;nextAttempt=0
+    }
+    fun receiveFriendLink(link:String) {
+        val code=EmailRules.invite(link)
+        if(code.isNotBlank()) mutable.value=mutable.value.copy(incomingInvite=code,message=if(mutable.value.session?.admitted==true) "你已开通账号，邀请链接不会自动改变配对关系" else "朋友邀请已识别，注册或登录后完成开通")
+    }
+    fun sendEmail(address:String,purpose:EmailPurpose,currentPassword:String="")=act {
+        val old=mutable.value.mailChallenge
+        require(old==null || System.currentTimeMillis()>=old.resendAt) {"请等待倒计时结束后再发送"}
+        val session=if(purpose==EmailPurpose.BIND) freshSession() else null
+        if(session!=null) bindGrant=emailAuth.sudo(session,currentPassword)
+        val challenge=emailAuth.send(address,purpose,session)
+        mutable.value=mutable.value.copy(mailChallenge=challenge,message="如果邮箱可用，验证码将发送到该邮箱；请检查收件箱和垃圾邮件")
+    }
+    fun registerEmail(address:String,code:String,password:String,nickname:String,link:String)=act {
+        require(nickname.trim().length in 2..32) {"昵称需要 2～32 个字"}
+        val invite=EmailRules.invite(link)
+        require(invite.isNotBlank()) {"请从朋友发来的注册链接进入，或粘贴完整链接"}
+        val challenge=mutable.value.mailChallenge ?: error("请先发送邮箱验证码")
+        val result=emailAuth.register(challenge,address,code,password)
+        val session=cloud.sessionFromTokens(result,nickname.trim())
+        withContext(Dispatchers.IO) {sessions.save(session)}
+        mutable.value=TodoState(ready=true,session=session,book=withContext(Dispatchers.IO) {store.read(session.uid)},busy=true,incomingInvite=invite)
+        admitFriend(nickname,invite)
+    }
+    private suspend fun admitFriend(nickname:String,link:String) {
+        val session=freshSession();val invite=EmailRules.invite(link)
+        require(invite.isNotBlank() && nickname.trim().length in 2..32) {"请填写昵称和有效的朋友注册链接"}
+        val result=cloud.friendInvite(session,"join",invite,nickname.trim())
+        require(result.optBoolean("admitted")) {"账号开通尚未完成，请重试"}
+        val admitted=session.copy(admitted=true,name=result.str("nickname",nickname.trim()))
+        withContext(Dispatchers.IO) {sessions.save(admitted)}
+        mutable.value=mutable.value.copy(session=admitted,incomingInvite="",message="账号已开通。邀请伙伴并确认配对后再共享日常",mailChallenge=null)
+        failures=0;nextAttempt=0
+    }
+    fun completeFriend(nickname:String,link:String)=act {admitFriend(nickname,link)}
+    fun resetEmail(address:String,code:String,password:String,onDone:()->Unit)=act {
+        val challenge=mutable.value.mailChallenge ?: error("请先发送邮箱验证码")
+        val revoked=emailAuth.reset(challenge,address,code,password)
+        mutable.value=mutable.value.copy(mailChallenge=null,message=if(revoked) "密码已更新，旧会话已停止访问共享数据。请使用新密码登录" else "密码已更新，但旧会话退出状态未确认。请用新密码登录，并联系管理员检查")
+        onDone()
+    }
+    fun loadEmail()=act {
+        val session=freshSession()
+        mutable.value=mutable.value.copy(contactEmail=cloud.contact(session))
+    }
+    fun bindEmail(address:String,code:String,onDone:()->Unit)=act {
+        val session=freshSession();val challenge=mutable.value.mailChallenge ?: error("请先验证当前密码并发送邮箱验证码")
+        emailAuth.bind(session,bindGrant,challenge,address,code)
+        bindGrant=""
+        mutable.value=mutable.value.copy(contactEmail=challenge.email,mailChallenge=null,message="邮箱已绑定，可使用邮箱和原密码登录；原记录与配对保留")
+        onDone()
+    }
+    fun createFriendLink()=act {
+        val result=cloud.friendInvite(freshSession(),"create")
+        val code=result.getString("code");require(EmailRules.invite(code).isNotBlank())
+        mutable.value=mutable.value.copy(friendLink="https://2269642185.github.io/withyou/register.html#invite=$code",message="注册链接 72 小时内有效，仅供一位新朋友使用；不会自动配对")
     }
     fun register(username:String,password:String,nickname:String,code:String)=act {
         require(nickname.trim().length in 2..32) {"昵称需要 2～32 个字"}
@@ -79,6 +145,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         mutable.value=mutable.value.copy(message="注册成功，请登录")
     }
     fun logout()=act {
+        bindGrant=""
         val old=mutable.value.session
         withContext(Dispatchers.IO) {sessions.save(null);old?.let {sharedPhotos.clear(it.uid)}}
         mutable.value=TodoState(ready=true,busy=true,message="已退出。本机个人记录和待同步操作按账号保留。")
@@ -132,7 +199,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         return session
     }
     fun sync(manual:Boolean=false) {
-        if(syncJob?.isActive==true || mutable.value.busy || mutable.value.session==null || mutable.value.failed || !manual && System.currentTimeMillis()<nextAttempt) return
+        if(syncJob?.isActive==true || mutable.value.busy || mutable.value.session?.admitted!=true || mutable.value.failed || !manual && System.currentTimeMillis()<nextAttempt) return
         syncJob=viewModelScope.launch {mutex.withLock {
             mutable.value=mutable.value.copy(busy=true,syncLabel="正在同步…")
             try {
@@ -192,7 +259,8 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
             } catch(e:CancellationException) {throw e}
             catch(e:Exception) {
                 failures=(failures+1).coerceAtMost(5);nextAttempt=System.currentTimeMillis()+(30000L shl failures).coerceAtMost(600000)
-                mutable.value=mutable.value.copy(syncLabel="同步失败 · 本机记录已保留",message=when {e is TodoCloudError || e is IllegalArgumentException->e.message.orEmpty();manual->"网络暂时不可用，已保存到本机，恢复连接后会继续同步";else->mutable.value.message})
+                if(e is TodoCloudError && e.reason.contains("SESSION_REVOKED")) expireSession(e.message.orEmpty())
+                else mutable.value=mutable.value.copy(syncLabel="同步失败 · 本机记录已保留",message=when {e is TodoCloudError || e is IllegalArgumentException->e.message.orEmpty();manual->"网络暂时不可用，已保存到本机，恢复连接后会继续同步";else->mutable.value.message})
             } finally {mutable.value=mutable.value.copy(busy=false);if(networkRetries>0 && failures>0) {nextAttempt=System.currentTimeMillis()+4000;networkRetries--}}
         }}
     }

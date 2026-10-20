@@ -30,7 +30,12 @@ async function register(input,ip,app=manager()) {
   const response=await fetch(`https://${envId}.api.tcloudbasegateway.com/auth/v1/signin`,{method:'POST',headers:{'Content-Type':'application/json','x-device-id':'withyou-registration'},body:JSON.stringify({username:input.username,password:input.password})});
   if(!response.ok) return {status:409,body:{message:'REGISTER_RETRY_OR_NAME_TAKEN'}};
  }
- await app.database.executePGSql({Sql:`UPDATE wy_private.registration_slots SET state='created' WHERE code_hash=${literal(hash)} AND username=${literal(input.username)}`});
+ // Keep older clients' one-time activation codes working after email admission.
+ const signed=await fetch(`https://${envId}.api.tcloudbasegateway.com/auth/v1/signin`,{method:'POST',headers:{'Content-Type':'application/json','x-device-id':'withyou-registration'},body:JSON.stringify({username:input.username,password:input.password})});
+ if(!signed.ok) return {status:503,body:{message:'REGISTER_RETRY_OR_NAME_TAKEN'}};
+ const identity=await signed.json();
+ if(typeof identity.sub!=='string' || !identity.sub) return {status:503,body:{message:'REGISTER_RETRY_OR_NAME_TAKEN'}};
+ await app.database.executePGSql({Sql:`WITH admitted AS (INSERT INTO wy_private.members(user_id) VALUES(${literal(identity.sub)}) ON CONFLICT DO NOTHING) UPDATE wy_private.registration_slots SET state='created' WHERE code_hash=${literal(hash)} AND username=${literal(input.username)}`});
  return {status:200,body:{ok:true}};
 }
 module.exports={valid,register};

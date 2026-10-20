@@ -1,3 +1,4 @@
+import nodePath from 'node:path';
 // Executes actual PostgreSQL functions and RLS in embedded PostgreSQL, not a JS permissions mock.
 import {PGlite} from '../build/pg-test/node_modules/@electric-sql/pglite/dist/index.js';
 import fs from 'node:fs';
@@ -60,5 +61,5 @@ await db.exec("RESET ROLE; UPDATE public.wy_invites SET expires_at=now()-interva
 await rejects('expired invite rejected',()=>rpc(uidB,'wy_pair_action',{action:'join',value:expired.code}));
 await rejects('anonymous RPC rejected',async()=>{await db.exec('RESET ROLE;SET ROLE anon');await db.query("select public.wy_snapshot()");});
 await db.close();
-fs.writeFileSync(new URL('../delivery/v1.5.0/sql-tests.json',import.meta.url),JSON.stringify({engine:'PGlite PostgreSQL; CloudBase gateway not simulated as deployed',tests:results},null,2));
+const output=process.argv[2]||'build/sql-tests/core-sql-tests.json';fs.mkdirSync(nodePath.dirname(output),{recursive:true});fs.writeFileSync(output,JSON.stringify({engine:'PGlite PostgreSQL; CloudBase gateway not simulated as deployed',tests:results},null,2));
 console.log(JSON.stringify({passed:results.length,results}));

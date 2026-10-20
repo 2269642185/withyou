@@ -79,7 +79,7 @@ node scripts/test_cloudbase_sql.mjs
 
 `scripts/verify_cloudbase_live.py` 是明确标记的真实云端回归，只读取 build/cloud-private/accounts.json 中一次性 QA 账号；会创建测试事项并解除这组测试账号配对。不要把真实用户账号写入该文件。
 TodoCloudEvidenceTest 是手动开启的 Android 真实云端与离线专项测试，普通回归排除它；测试只在专用模拟器运行，会切换该模拟器网络并在 finally 恢复。
-后续源码上传、GitHub Release 和下载页发布仍等待用户单独通知。
+后续按用户 2026-10-19 的持续授权，在构建和验证通过后发布源码、GitHub Release 和下载页。
 
 ## 官方接口依据
 
@@ -108,3 +108,8 @@ python -X utf8 scripts/cloudbase_sql.py --apply cloudbase/sql/004_shared_memorie
 scripts/cloudbase_backup.py 现在包含共享纪念日元数据；不包含 Storage 对象二进制，不是完整共享照片恢复包。用户自己创建的原始纪念日及照片仍可由原设置页导出 ZIP；伙伴共享副本不并入本机私人纪念日备份。
 
 验证：node scripts/test_shared_memories.mjs；scripts/verify_shared_cloud.py 明确创建临时 QA 账号并保存忽略目录，只在管理员本机运行。SharedCloudEvidenceTest 需手动开启 sharedCloudEvidence=true，测试凭据经 adb 放在专用模拟器 /data/local/tmp/withyou-v16-qa.json（测试后删除），不放进 APK 或源码。它会测试网络中断/重启/上传/对方查看/撤回/解绑，仅用于专用测试账号。
+
+
+## 1.7.0 邮箱注册与朋友准入
+
+详见 [email/README.md](email/README.md)。006 原子回填现有身份并增加朋友准入；007 增加业务会话截止时间。真实 QQ/Gmail 收信、原账号绑定、密码恢复和旧会话保护已验证。邮箱通过用户配置的 QQ SMTP 发信，不写入 App 凭据；没有全局每日邮件硬上限。

@@ -1,0 +1,38 @@
+{
+  "version": "1.7.0",
+  "versionCode": 10,
+  "jvm": {
+    "tests": 30,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "api36Emulator": {
+    "tests": 48,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "actualCloudAndroid": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "actualEmailHttp": 23,
+  "sqlCore": 22,
+  "sqlShared": 17,
+  "sqlAdmission": 22,
+  "sqlSession": 14,
+  "lint": {
+    "Warning": 34,
+    "Hint": 1
+  },
+  "sameCertificate": true,
+  "oldPrivateFilesPreservedBeforeOpening": 10,
+  "existingCloudAccountsPreserved": 3,
+  "qqAndGmailReceiptConfirmedByUser": true,
+  "dailyMailHardLimit": false,
+  "physicalPhoneTested": false,
+  "published": false
+}

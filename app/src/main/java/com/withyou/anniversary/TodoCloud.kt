@@ -8,6 +8,16 @@ import java.net.URL
 import java.util.UUID
 
 class TodoCloudError(val status:Int,val reason:String):Exception(when {
+    reason.contains("SESSION_REVOKED") -> "账号安全状态已更新，请退出后用新密码登录；本机待同步记录会保留"
+    reason.contains("FRIEND_INVITE_REQUIRED") -> "请使用朋友发来的注册链接开通账号"
+    reason.contains("INVALID_FRIEND_INVITE") -> "注册链接无效、已使用或已过期，请向朋友获取新链接"
+    reason.contains("REGISTRATION_CLOSED") -> "当前暂停新朋友注册，已有账号仍可登录"
+    reason.contains("rate_limit") || reason.contains("resource_exhausted") -> "发送或验证太频繁，请稍后重试"
+    reason.contains("invalid_verification") || reason.contains("verification_expired") -> "验证码错误或已过期，请检查或重新发送"
+    reason.contains("weak_password") -> "密码强度不足，请按页面要求设置"
+    reason.contains("invalid_password") -> "当前密码不正确，请检查后重新发送验证码"
+    reason.contains("sudo") -> "身份验证已过期，请重新输入当前密码并发送验证码"
+    reason.contains("email") && (reason.contains("exist") || reason.contains("bound")) -> "此操作暂时无法完成，请尝试登录或找回密码"
     reason.contains("PAIR_CHANGED") -> "配对关系已变化，旧的共享操作已停止"
     reason.contains("DAY_CHANGED") -> "日期已经变化，请在今天的事项中重新打卡"
     reason.contains("INVALID_INVITE") -> "邀请码无效、已使用或已过期"
@@ -30,18 +40,18 @@ class TodoCloudError(val status:Int,val reason:String):Exception(when {
 /** CloudBase HTTP Auth API, not Supabase GoTrue endpoints. No administrator credentials. */
 class TodoCloud(private val deviceId:String, private val registrationUrl:String=BuildConfig.CLOUD_REGISTER_URL) {
     private val base="https://${BuildConfig.CLOUD_ENV}.api.tcloudbasegateway.com"
-    internal suspend fun request(path:String,body:JSONObject,token:String="",absolute:Boolean=false):JSONObject=withContext(Dispatchers.IO) {
+    internal suspend fun request(path:String,body:JSONObject,token:String="",absolute:Boolean=false,method:String="POST"):JSONObject=withContext(Dispatchers.IO) {
         val address=if(absolute) path else base+path
         val url=URL(address)
         require(url.protocol=="https" && url.userInfo==null) { "云端连接必须使用 HTTPS" }
         val conn=(url.openConnection() as HttpURLConnection).apply {
-            requestMethod="POST";connectTimeout=12000;readTimeout=15000;instanceFollowRedirects=false;doOutput=true
+            requestMethod=method;connectTimeout=12000;readTimeout=15000;instanceFollowRedirects=false;doOutput=method!="GET"
             setRequestProperty("Content-Type","application/json");setRequestProperty("Accept","application/json")
             setRequestProperty("x-device-id",deviceId)
             if(token.isNotBlank()) setRequestProperty("Authorization","Bearer $token")
         }
         try {
-            conn.outputStream.use {it.write(body.toString().toByteArray())}
+            if(method!="GET") conn.outputStream.use {it.write(body.toString().toByteArray())}
             val status=conn.responseCode
             val text=(if(status in 200..299) conn.inputStream else conn.errorStream)?.use {input ->
                 val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192)
@@ -49,16 +59,23 @@ class TodoCloud(private val deviceId:String, private val registrationUrl:String=
                 out.toString("UTF-8")
             }.orEmpty()
             val result=runCatching {JSONObject(text)}.getOrElse {JSONObject()}
-            if(status !in 200..299) throw TodoCloudError(status,result.str("message")+result.str("error")+result.str("code"))
+            if(status !in 200..299) throw TodoCloudError(status,result.str("message")+result.str("error")+result.str("code")+result.str("error_description"))
             result
         } finally {conn.disconnect()}
     }
     suspend fun login(username:String,password:String):TodoSession {
         val result=request("/auth/v1/signin",JSONObject().put("username",username).put("password",password))
-        val access=result.getString("access_token")
-        val user=requestMe(access)
-        return TodoSession(user.getString("sub"),user.str("name",username).ifBlank {username},access,result.getString("refresh_token"),System.currentTimeMillis()+result.optLong("expires_in",7200)*1000)
+        return sessionFromTokens(result,username)
     }
+    internal suspend fun sessionFromTokens(result:JSONObject,fallback:String):TodoSession {
+        val access=result.getString("access_token");val user=requestMe(access);val uid=user.getString("sub")
+        require(result.str("sub",uid)==uid) {"登录身份不一致，请重新登录"}
+        val status=request("/v1/rdb/rest/rpc/wy_account_status",JSONObject(),access)
+        return TodoSession(uid,status.str("nickname").ifBlank {user.str("name").takeUnless {it.contains('@')}?.ifBlank {fallback} ?: fallback},access,result.getString("refresh_token"),System.currentTimeMillis()+result.optLong("expires_in",7200)*1000,status.optBoolean("admitted",false))
+    }
+    internal suspend fun contact(session:TodoSession)=requestMe(session.access).also {require(it.getString("sub")==session.uid)}.str("email")
+    internal suspend fun friendInvite(session:TodoSession,action:String,code:String="",nickname:String="")=
+        request("/v1/rdb/rest/rpc/wy_friend_invite",JSONObject().put("action",action).put("code",code).put("nickname",nickname),session.access)
     private suspend fun requestMe(token:String):JSONObject=withContext(Dispatchers.IO) {
         val c=(URL("$base/auth/v1/user/me").openConnection() as HttpURLConnection).apply {
             connectTimeout=12000;readTimeout=15000;instanceFollowRedirects=false

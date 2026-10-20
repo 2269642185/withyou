@@ -92,14 +92,17 @@ import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     private var requestedId = mutableStateOf<String?>(null)
+    private var requestedInvite = mutableStateOf<String?>(null)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestedId.value = intent.getStringExtra("recordId")
-        setContent { AnniversaryApp(requestedId.value, consumed = { requestedId.value = null }) }
+        requestedInvite.value=intent.dataString
+        setContent { AnniversaryApp(requestedId.value, consumed = { requestedId.value = null },requestedInvite=requestedInvite.value,inviteConsumed={requestedInvite.value=null}) }
     }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent); requestedId.value = intent.getStringExtra("recordId")
+        requestedInvite.value=intent.dataString
     }
 }
 
@@ -108,7 +111,7 @@ private val chineseDate = DateTimeFormatter.ofPattern("yyyy 年 M 月 d 日")
 internal fun LocalDate.label() = format(chineseDate)
 
 @Composable
-fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: MainViewModel = viewModel()) {
+fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: MainViewModel = viewModel(),requestedInvite:String?=null,inviteConsumed:()->Unit={}) {
     val updater: UpdateViewModel = viewModel()
     val todos: TodoViewModel = viewModel()
     val updateState by updater.state.collectAsStateWithLifecycle()
@@ -130,6 +133,7 @@ fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: M
     val colors = withYouColors(dark)
     MaterialTheme(colorScheme = colors, typography = Typography()) {
         var route by rememberSaveable { mutableStateOf("home") }
+        LaunchedEffect(requestedInvite) {if(requestedInvite!=null) {if(EmailRules.invite(requestedInvite).isNotBlank()) {todos.receiveFriendLink(requestedInvite);route="todos"};inviteConsumed()}}
         var selected by rememberSaveable { mutableStateOf<String?>(null) }
         var homeFilter by rememberSaveable { mutableStateOf("all") }
         val today = rememberToday()

@@ -1,3 +1,4 @@
+import nodePath from 'node:path';
 import {PGlite} from '../build/pg-test/node_modules/@electric-sql/pglite/dist/index.js';
 import fs from 'node:fs';import crypto from 'node:crypto';
 const db=new PGlite();const results=[];
@@ -39,4 +40,4 @@ const todo=crypto.randomUUID();
 await rpc('a','wy_apply',{op_id:crypto.randomUUID(),payload:{id:todo,type:'task',expected:0,kind:'todo',visibility:'private',title:'离线待办',weekdays:[1,2,3,4,5,6,7]}});
 await rpc('a','wy_apply',{op_id:crypto.randomUUID(),payload:{id:todo,type:'check',expected:0,day:'1970-01-01',completed_on:'2026-10-18',done:true}});
 ok('offline one-time completion preserves actual completed date',(await as('a','select completed_on::text as day from public.wy_checks where task_id=$1',[todo])).rows[0].day==='2026-10-18');
-fs.mkdirSync('delivery/v1.6.0',{recursive:true});fs.writeFileSync('delivery/v1.6.0/shared-sql-tests.json',JSON.stringify({engine:'PostgreSQL PGlite',tests:results},null,2));console.log(JSON.stringify({passed:results.length}));await db.close();
+const output=process.argv[2]||'build/sql-tests/shared-sql-tests.json';fs.mkdirSync(nodePath.dirname(output),{recursive:true});fs.writeFileSync(output,JSON.stringify({engine:'PostgreSQL PGlite',tests:results},null,2));console.log(JSON.stringify({passed:results.length}));await db.close();

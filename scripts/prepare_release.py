@@ -32,6 +32,7 @@ def main():
     for folder in (site,assets): (folder/'update.json').write_text(text,encoding='utf-8')
     page=(root/'web/index.html').read_text(encoding='utf-8').replace('2269642185/withyou',args.repo)
     (site/'index.html').write_text(page,encoding='utf-8'); (site/'.nojekyll').touch()
+    if (root/'web/register.html').is_file(): shutil.copyfile(root/'web/register.html',site/'register.html')
     shutil.copyfile(args.notes,assets/'release-notes.md')
     print(json.dumps({'output':str(output),'sha256':manifest['sha256'],'size':manifest['size']},ensure_ascii=False))
 
