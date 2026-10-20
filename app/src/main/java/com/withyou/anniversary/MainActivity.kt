@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        LauncherIcons.activityVisible=true
         requestedId.value = intent.getStringExtra("recordId")
         requestedInvite.value=intent.dataString
         setContent { AnniversaryApp(requestedId.value, consumed = { requestedId.value = null },requestedInvite=requestedInvite.value,inviteConsumed={requestedInvite.value=null}) }
@@ -103,6 +104,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent); requestedId.value = intent.getStringExtra("recordId")
         requestedInvite.value=intent.dataString
+    }
+    override fun onStart() { super.onStart();LauncherIcons.activityVisible=true }
+    override fun onStop() {
+        super.onStop()
+        if(!isChangingConfigurations) {LauncherIcons.activityVisible=false;LauncherIcons(this).restore()}
     }
 }
 
@@ -130,10 +136,13 @@ fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: M
             isAppearanceLightNavigationBars = !dark
         } }
     }
-    val colors = withYouColors(dark)
+    val colors = animatedAppColors(withYouColors(dark,data.preferences.palette),rememberMotionEnabled(data.preferences.animations))
     MaterialTheme(colorScheme = colors, typography = Typography()) {
         var route by rememberSaveable { mutableStateOf("home") }
         LaunchedEffect(requestedInvite) {if(requestedInvite!=null) {if(EmailRules.invite(requestedInvite).isNotBlank()) {todos.receiveFriendLink(requestedInvite);route="todos"};inviteConsumed()}}
+        LaunchedEffect(todoState.ready,todoState.book?.pairId,todoState.session?.uid,route) {
+            if(todoState.ready && route=="shared" && (todoState.session?.admitted!=true || todoState.book?.pairId.isNullOrBlank())) route="home"
+        }
         var selected by rememberSaveable { mutableStateOf<String?>(null) }
         var homeFilter by rememberSaveable { mutableStateOf("all") }
         val today = rememberToday()
@@ -188,15 +197,16 @@ fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: M
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).clipToBounds()) {
                 if (!ready) CircularProgressIndicator(Modifier.align(Alignment.Center))
                 else PageMotion(route) { when (route) {
-                    "home" -> Home(data, today, failed, ::add, ::open, { route = "categories" }, {route="shared"}, homeFilter) { homeFilter=it }
+                    "home" -> Home(data, today, failed, todoState.session?.admitted==true && todoState.book?.pairId?.isNotBlank()==true, ::add, ::open, { route = "categories" }, {route="shared"}, homeFilter) { homeFilter=it }
                     "detail" -> if (record != null) Detail(record, today, vm.repository.photos, busy,
                         { route = "home" }, { route = "editor" }, { vm.pin(record.id) }, { todos.sharedDelete(record) {vm.delete(record.id) { route = "home" }} }, {MemoryShareAction(record,todos) {route="todos"}})
                         else LaunchedEffect(Unit) { route = "home" }
                     "editor" -> key(selected) { Editor(record, data.preferences.defaultMode, today, vm, busy,
                         { route = if (record == null) "home" else "detail" }, { saved -> vm.save(saved) { selected = saved.id; route = "detail"; todos.sharedEdit(saved) } }) }
-                    "settings" -> Settings(data, vm, busy, {route="updates"}) { notice = it }
+                    "settings" -> Settings(data, vm, busy, {route="updates"}, {route="account"}) { notice = it }
                     "updates" -> UpdatesScreen(updater) {route="settings"}
                     "todos" -> TodoScreen(todos)
+                    "account" -> TodoAccountScreen(todos) {route="settings"}
                     "shared" -> SharedMemoriesScreen(todos,data.records,{route="home"},{route="todos"})
                     "categories" -> CategoryManager(data,vm) {route="home"}
                 } }
@@ -227,7 +237,7 @@ private fun rememberToday(): LocalDate {
 }
 
 @Composable
-private fun Home(data: AppData, today: LocalDate, failed: Boolean, add: () -> Unit, open: (String) -> Unit, categories: () -> Unit, shared: () -> Unit, filter: String, onFilter: (String) -> Unit) {
+private fun Home(data: AppData, today: LocalDate, failed: Boolean, paired: Boolean, add: () -> Unit, open: (String) -> Unit, categories: () -> Unit, shared: () -> Unit, filter: String, onFilter: (String) -> Unit) {
     val context = LocalContext.current
     val motion=LocalMotionEnabled.current
     val listState=rememberLazyListState()
@@ -257,7 +267,7 @@ private fun Home(data: AppData, today: LocalDate, failed: Boolean, add: () -> Un
                 if(filter!="all" && !panelVisible && categoryName!=null) Text("当前：$categoryName",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelLarge)
             }
         }
-        item(key="shared_entry") {TextButton(onClick=shared) {Icon(Icons.Outlined.PeopleOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("我们的共享")}}
+        if(paired) item(key="shared_entry") {TextButton(onClick=shared) {Icon(Icons.Outlined.PeopleOutline,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("我们的共享")}}
         if(panelVisible) item(key="category_panel") {
             AnimatedVisibility(visibleState=transition,enter=expandVertically(tween(if(motion)200 else 0))+fadeIn(tween(if(motion)160 else 0)),
                 exit=shrinkVertically(tween(if(motion)200 else 0))+fadeOut(tween(if(motion)120 else 0))) {
@@ -526,7 +536,7 @@ fun SelectionRow(text: String, selected: Boolean, click: () -> Unit) {
 }
 
 @Composable
-private fun Settings(data: AppData, vm: MainViewModel, busy: Boolean, updates: () -> Unit, notice: (String) -> Unit) {
+private fun Settings(data: AppData, vm: MainViewModel, busy: Boolean, updates: () -> Unit, account: () -> Unit, notice: (String) -> Unit) {
     var confirmRestore by remember { mutableStateOf(false) }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> uri?.let { vm.backup(it) { notice("备份已导出，包含记录、设置与照片") } } }
     val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.restore(it) { notice("恢复完成，已重新计算全部日期") } } }
@@ -534,8 +544,12 @@ private fun Settings(data: AppData, vm: MainViewModel, busy: Boolean, updates: (
         Text("留给日常的偏爱",fontSize=28.sp,fontWeight=FontWeight.SemiBold)
         Text("简单一点，也安心一点。",color=MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick=updates,modifier=Modifier.fillMaxWidth()) { Text("版本与更新") }
-        Text("外观主题",fontWeight=FontWeight.SemiBold,modifier=Modifier.padding(top=10.dp))
+        OutlinedButton(onClick=account,modifier=Modifier.fillMaxWidth()) {Text("账号与伙伴")}
+        Text("外观",fontWeight=FontWeight.SemiBold,modifier=Modifier.padding(top=10.dp))
         AppTheme.entries.forEach { theme -> SelectionRow(theme.label,data.preferences.theme==theme) { vm.update(transform={it.copy(preferences=it.preferences.copy(theme=theme))}) } }
+        Text("主题配色",fontWeight=FontWeight.SemiBold)
+        PalettePicker(data.preferences.palette,!busy) { palette -> vm.update(transform={it.copy(preferences=it.preferences.copy(palette=palette))}) }
+        Text("仅改变这台设备的界面配色，保留纪念日的自定义样式。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         Text("新纪念日的默认计数",fontWeight=FontWeight.SemiBold)
         CountMode.entries.forEach { mode -> SelectionRow(mode.label,data.preferences.defaultMode==mode) { vm.update(transform={it.copy(preferences=it.preferences.copy(defaultMode=mode))}) } }
         Text("仅影响之后新建的记录。已有纪念日可在编辑页单独修改。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -543,7 +557,7 @@ private fun Settings(data: AppData, vm: MainViewModel, busy: Boolean, updates: (
         Text("轻微转场与按压反馈；周年当天有一次花瓣庆祝。系统关闭动画时自动停用。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         HorizontalDivider()
         Text("把回忆妥善收藏",fontWeight=FontWeight.SemiBold)
-        InfoCard("本机已收藏 ${data.records.size} 个日子", "记录与照片仅保存在本机，不上传服务器。卸载会清除本地数据，请先导出备份并妥善保存。备份包含个人照片，请保存在可信位置。", Icons.Outlined.Inventory2)
+        InfoCard("本机已收藏 ${data.records.size} 个日子", "未主动共享的纪念日与照片仅保存在本机。卸载会清除本地数据，请先导出备份并妥善保存。备份包含个人照片，请保存在可信位置。", Icons.Outlined.Inventory2)
         OutlinedButton(onClick={export.launch("与你-纪念日-${LocalDate.now()}.zip")},enabled=!busy,modifier=Modifier.fillMaxWidth()) {Icon(Icons.Outlined.FileUpload,null);Spacer(Modifier.width(8.dp));Text("导出完整备份")}
         OutlinedButton(onClick={confirmRestore=true},enabled=!busy,modifier=Modifier.fillMaxWidth()) {Icon(Icons.Outlined.FileDownload,null);Spacer(Modifier.width(8.dp));Text("从备份恢复")}
         InfoCard("在桌面，也能想起你", "长按桌面 → 小组件 → 与你 · 纪念日。可选择小、中、大布局，每个组件独立选择记录与配色；组件右下角可重新配置。实际格子由桌面决定，省电模式可能延迟跨日刷新。", Icons.Outlined.Widgets)

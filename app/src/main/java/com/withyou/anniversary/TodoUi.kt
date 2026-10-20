@@ -46,39 +46,41 @@ import java.time.LocalDate
 fun TodoScreen(vm:TodoViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     var page by rememberSaveable {mutableStateOf("list")}
+    LaunchedEffect(state.incomingInvite) {if(state.incomingInvite.isNotBlank()) page="account"}
     var editId by rememberSaveable {mutableStateOf<String?>(null)}
     var date by remember {mutableStateOf(TodoRules.today())}
     val owner=LocalLifecycleOwner.current
     LaunchedEffect(owner,state.session?.uid,page) {
-        if(state.session!=null && page!="editor") owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            vm.sync(false)
+        if(page!="editor") owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            date=TodoRules.today();vm.sync(false)
             while(true) {delay(5000);date=TodoRules.today();vm.sync(false)}
         }
     }
     LaunchedEffect(state.busy,state.book?.pending?.size,page) {if(!state.busy && page!="editor") vm.sync(false)}
     BackHandler(page!="list") {page="list"}
     if(!state.ready) {Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {CircularProgressIndicator()};return}
-    if(state.session==null) {EmailLogin(state,vm);return}
-    if(!state.session!!.admitted) {FriendAdmission(state,vm);return}
+    if(page=="account") {TodoAccountScreen(vm) {page="list"};return}
+    if(state.session?.admitted==false) {FriendAdmission(state,vm);return}
     val book=state.book ?: return
     if(page=="editor") {
         TodoEditor(book.tasks.find {it.id==editId},book,state.busy,state.message,{page="list"}) {vm.saveTask(it) {page="list"}}
         return
     }
-    if(page=="account") {TodoAccount(state,vm) {page="list"};return}
+    val paired=book.pairId.isNotBlank()
+    val name=state.session?.name ?: "自己"
     var historyId by rememberSaveable {mutableStateOf<String?>(null)}
     var actionTask by remember {mutableStateOf<TodoTask?>(null)}
     var confirmDelete by remember {mutableStateOf<TodoTask?>(null)}
     LazyColumn(Modifier.fillMaxSize().testTag("todo_list"),contentPadding=PaddingValues(horizontal=16.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         item {
             Row(verticalAlignment=Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {Text("把小事，一起坚持",fontSize=25.sp,fontWeight=FontWeight.SemiBold);Text("${date.monthValue} 月 ${date.dayOfMonth} 日 · 上海时间",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-                IconButton(onClick={page="account"}) {Icon(Icons.Outlined.PeopleOutline,"账号与伙伴")}
+                Column(Modifier.weight(1f)) {Text(if(paired) "把小事，一起坚持" else "把小事，慢慢做好",fontSize=25.sp,fontWeight=FontWeight.SemiBold);Text("${date.monthValue} 月 ${date.dayOfMonth} 日 · 上海时间",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+
             }
         }
         item {Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Text(state.syncLabel,Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            TextButton(onClick={vm.sync(true)},enabled=!state.busy) {Text("刷新")}
+            if(state.session!=null) TextButton(onClick={vm.sync(true)},enabled=!state.busy) {Text("刷新")}
             FilledTonalButton(onClick={editId=null;page="editor"},enabled=!state.busy && !state.failed) {Text("新增事项")}
         }}
         if(state.busy) item {LinearProgressIndicator(Modifier.fillMaxWidth())}
@@ -88,17 +90,17 @@ fun TodoScreen(vm:TodoViewModel) {
             book.conflicts.forEach {Text(it,Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodySmall)}
             TextButton(onClick=vm::acknowledge,enabled=!state.busy) {Text("我已查看")}
         }}}
-        item {TodoProgressPanel(book,state.session!!.name,date,state.busy || book.pending.isNotEmpty() || book.shareJobs.isNotEmpty())}
-        val tasks=book.tasks.filter {!it.deleted && !it.archived}
+        item {TodoProgressPanel(book,name,date,state.busy || book.pending.isNotEmpty() || book.shareJobs.isNotEmpty())}
+        val tasks=book.tasks.filter {!it.deleted && !it.archived && (paired || !it.shared)}
             .sortedWith(compareBy<TodoTask> {!TodoRules.scheduled(it,date)}.thenBy {TodoRules.complete(book,it,it.owner,date)}.thenBy {it.due ?: LocalDate.MAX}.thenBy {it.title})
         if(tasks.isEmpty()) item {Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Icon(Icons.Outlined.Spa,null,Modifier.size(32.dp),tint=MaterialTheme.colorScheme.primary)
             Text("从一件小事开始",fontWeight=FontWeight.SemiBold,fontSize=21.sp)
-            Text(if(book.pairId.isBlank()) "写下一个小目标。邀请伙伴后，让彼此看见每天的进步。" else "写下一件想做的小事，与伙伴分享每天的一点进步。")
+            Text(if(book.pairId.isBlank()) "写下一个待办，或选择想坚持的习惯。" else "写下一件想做的小事，与伙伴分享每天的一点进步。")
             TextButton(onClick={editId=null;page="editor"},enabled=!state.busy) {Text("写下第一件小事")}
         }}}
         items(tasks,key={it.id}) {task ->
-            CompactTodoCard(task,book,state.session!!.name,date,state.busy || state.failed,
+            CompactTodoCard(task,book,name,date,state.busy || state.failed,
                 actionTask?.id==task.id,{actionTask=task},{actionTask=null},
                 {vm.toggle(task,date)},{historyId=task.id;actionTask=null},
                 {editId=task.id;page="editor";actionTask=null},
@@ -106,10 +108,10 @@ fun TodoScreen(vm:TodoViewModel) {
                 {confirmDelete=task;actionTask=null},
                 if(LocalMotionEnabled.current) Modifier.animateItem() else Modifier)
         }
-        item {Text("断网时先保存到本机，联网后再同步。历史打卡按上海日期记录。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+        item {Text(if(state.session==null) "记录保存在这台设备，历史打卡按上海日期记录。" else "断网时先保存到本机，联网后再同步。历史打卡按上海日期记录。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
     TodoTogetherCelebration(book,date,state.syncLabel.startsWith("已同步") && !state.busy)
-    confirmDelete?.let {task->AlertDialog(onDismissRequest={confirmDelete=null},title={Text("删除这个事项？")},text={Text("删除会同步给伙伴，历史记录不再显示。此操作不可在 App 内恢复。")},confirmButton={TextButton(onClick={vm.saveTask(task.copy(deleted=true)) {};confirmDelete=null}) {Text("确认删除")}},dismissButton={TextButton(onClick={confirmDelete=null}) {Text("取消")}})}
+    confirmDelete?.let {task->AlertDialog(onDismissRequest={confirmDelete=null},title={Text("删除这个事项？")},text={Text(if(paired) "删除会同步给伙伴，历史记录不再显示。此操作不可在 App 内恢复。" else "历史记录不再显示，此操作不可在 App 内恢复。")},confirmButton={TextButton(onClick={vm.saveTask(task.copy(deleted=true)) {};confirmDelete=null}) {Text("确认删除")}},dismissButton={TextButton(onClick={confirmDelete=null}) {Text("取消")}})}
     historyId?.let {id->
         val checks=book.checks.filter {it.taskId==id && it.done}.sortedByDescending {it.day}
         AlertDialog(onDismissRequest={historyId=null},title={Text("打卡记录")},text={Column(Modifier.heightIn(max=400.dp).verticalScroll(rememberScrollState())) {
@@ -118,7 +120,7 @@ fun TodoScreen(vm:TodoViewModel) {
                 if(task.notes.isNotBlank()) Text(task.notes,Modifier.padding(vertical=8.dp))
             }
             if(checks.isEmpty()) Text("还没有完成记录")
-            checks.forEach {Text((if(it.day==LocalDate.of(1970,1,1)) "已完成待办" else it.day.label())+" · "+if(it.user==book.uid) state.session!!.name else book.partnerName,Modifier.padding(vertical=6.dp))}
+            checks.forEach {Text((if(it.day==LocalDate.of(1970,1,1)) "已完成待办" else it.day.label())+" · "+if(it.user==book.uid) name else book.partnerName,Modifier.padding(vertical=6.dp))}
         }},confirmButton={TextButton(onClick={historyId=null}) {Text("关闭")}})
     }
 }
@@ -143,7 +145,7 @@ private fun TodoEditor(existing:TodoTask?,book:TodoBook,busy:Boolean,message:Str
         OutlinedTextField(title,{if(it.length<=80) title=it},label={Text("事项标题")},modifier=Modifier.fillMaxWidth())
         OutlinedTextField(notes,{if(it.length<=1000) notes=it},label={Text("备注（可选）")},modifier=Modifier.fillMaxWidth(),minLines=2)
         Text("事项类型",fontWeight=FontWeight.SemiBold)
-        TodoKind.entries.forEach {value->Row(Modifier.fillMaxWidth().selectable(selected=kind==value,enabled=existing==null && (value!=TodoKind.SHARED || book.pairId.isNotBlank()),onClick={kind=value;if(value==TodoKind.SHARED) shared=true}),verticalAlignment=Alignment.CenterVertically) {
+        TodoKind.entries.filter {it!=TodoKind.SHARED || book.pairId.isNotBlank()}.forEach {value->Row(Modifier.fillMaxWidth().selectable(selected=kind==value,enabled=existing==null && (value!=TodoKind.SHARED || book.pairId.isNotBlank()),onClick={kind=value;if(value==TodoKind.SHARED) shared=true}),verticalAlignment=Alignment.CenterVertically) {
             RadioButton(selected=kind==value,onClick=null,enabled=existing==null && (value!=TodoKind.SHARED || book.pairId.isNotBlank()))
             Text(value.label)
         }}
@@ -155,10 +157,9 @@ private fun TodoEditor(existing:TodoTask?,book:TodoBook,busy:Boolean,message:Str
             Text("每周打卡日")
             Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {(1..7).forEach {n->FilterChip(n in days,{days=if(n in days) days-n else days+n},label={Text("一二三四五六日"[n-1].toString())})}}
         }
-        Text(if(shared) "♡ 这件小事默认让伙伴看见" else "仅自己可见",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
-        TextButton(onClick={advanced=!advanced}) {Text(if(advanced) "收起隐私设置" else "隐私设置")}
-        if(advanced) Row(verticalAlignment=Alignment.CenterVertically) {Text("向伙伴共享",Modifier.weight(1f));Switch(shared,onCheckedChange={shared=it},enabled=kind!=TodoKind.SHARED && (book.pairId.isNotBlank() || shared))}
-        if(book.pairId.isBlank()) Text("未配对时可创建私人事项。共享事项需要先邀请伙伴。",style=MaterialTheme.typography.bodySmall)
+        if(book.pairId.isNotBlank()) Text(if(shared) "♡ 这件小事默认让伙伴看见" else "仅自己可见",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
+        if(book.pairId.isNotBlank()) TextButton(onClick={advanced=!advanced}) {Text(if(advanced) "收起隐私设置" else "隐私设置")}
+        if(advanced && book.pairId.isNotBlank()) Row(verticalAlignment=Alignment.CenterVertically) {Text("向伙伴共享",Modifier.weight(1f));Switch(shared,onCheckedChange={shared=it},enabled=kind!=TodoKind.SHARED && (book.pairId.isNotBlank() || shared))}
         if(existing!=null) Row(verticalAlignment=Alignment.CenterVertically) {Text("归档",Modifier.weight(1f));Switch(archived,{archived=it})}
         if(error.isNotBlank() || message.isNotBlank()) Text(error.ifBlank {message},color=MaterialTheme.colorScheme.primary)
         Button(onClick={try {
@@ -170,7 +171,7 @@ private fun TodoEditor(existing:TodoTask?,book:TodoBook,busy:Boolean,message:Str
 }
 
 @Composable
-private fun TodoAccount(state:TodoState,vm:TodoViewModel,back:()->Unit) {
+internal fun TodoAccount(state:TodoState,vm:TodoViewModel,back:()->Unit) {
     var security by rememberSaveable {mutableStateOf(false)}
     LaunchedEffect(state.session?.uid) {vm.loadEmail()}
     if(security) {EmailSecurity(state,vm) {security=false};return}

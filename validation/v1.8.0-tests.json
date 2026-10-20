@@ -1,0 +1,30 @@
+{
+  "version": "1.8.0",
+  "versionCode": 11,
+  "jvm": {
+    "tests": 30,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "api36Emulator": {
+    "tests": 56,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "Warning": 51,
+    "Hint": 1
+  },
+  "sameCertificate": true,
+  "privateFilesPreservedBeforeOpening": 11,
+  "themes": 6,
+  "lightDarkSchemes": 12,
+  "newDeviceTests": 8,
+  "launcherAliasBackgroundSwitchTested": true,
+  "existingCloudBackendUnchanged": true,
+  "physicalPhoneTested": false,
+  "android26to35RuntimeTested": false,
+  "published": false
+}

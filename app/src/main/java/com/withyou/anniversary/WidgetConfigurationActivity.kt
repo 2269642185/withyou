@@ -57,7 +57,7 @@ class WidgetConfigurationActivity : ComponentActivity() {
                     catch(e:Exception) {error="读取失败，请先打开应用检查记录"}
                 }
             }
-            MaterialTheme(colorScheme=withYouColors(dark)) {
+            MaterialTheme(colorScheme=withYouColors(dark,data?.preferences?.palette ?: AppPalette.CREAM)) {
                 Scaffold {padding ->Column(Modifier.fillMaxSize().padding(padding)) {
                     PageHeading("选择桌面上的纪念",{finish()})
                     LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(24.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {

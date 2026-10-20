@@ -51,7 +51,7 @@ internal fun EmailLogin(state:TodoState,vm:TodoViewModel) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Icon(Icons.Outlined.MarkEmailRead,null,Modifier.size(36.dp),tint=MaterialTheme.colorScheme.primary)
         Text(when(mode) {"register"->"让日常，彼此看见";"reset"->"找回熟悉的账号";else->"把小事，一起坚持"},style=MaterialTheme.typography.headlineSmall)
-        Text("个人纪念日无需登录。登录后与伙伴共享日常。",style=MaterialTheme.typography.bodyMedium)
+        Text("纪念日与个人打卡无需登录。登录后可同步打卡，配对后再共享日常。",style=MaterialTheme.typography.bodyMedium)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             FilterChip(mode=="login",{mode="login";password="";confirm="";code=""},label={Text("登录")},enabled=!state.busy)
             FilterChip(mode=="register",{mode="register";password="";confirm="";code=""},label={Text("邮箱注册")},enabled=!state.busy)

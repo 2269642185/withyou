@@ -21,7 +21,7 @@ App 通过 GitHub Releases 的 `releases/latest/download/update.json` 读取更�
 3. 生成发布文件：
 
 ```powershell
-python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.apk --notes RELEASE-NOTES.md --version 1.7.0 --code 10 --out release-output/v1.7.0
+python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.apk --notes RELEASE-NOTES.md --version 1.8.0 --code 11 --out release-output/v1.8.0
 ```
 
 4. 将 `release-output/site/` 内容复制至仓库的 `docs/`，提交已验证源码、文档和 docs。不要提交 APK 到 Git 历史。
@@ -30,7 +30,7 @@ python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.ap
 7. 在上述持续授权范围内，使用已登录 Git 凭据的手动脚本：
 
 ```powershell
-python scripts/github_release.py --bundle release-output/v1.7.0 --commit 实际已推送提交SHA
+python scripts/github_release.py --bundle release-output/v1.8.0 --commit 实际已推送提交SHA
 ```
 
 脚本只在手动运行时发布，没有定时任务、推送触发的版本发布或自动更新签名。若版本标签已存在，不覆盖已有版本；先检查后台是否留下未发布草稿。
@@ -43,3 +43,7 @@ python scripts/github_release.py --bundle release-output/v1.7.0 --commit 实际�
 其他电脑直接构建会生成不同 debug 签名，无法给已安装旧版的手机覆盖更新。
 `updateFixtureCode` 只用于本地生成校验测试用的较高版本，不用于正式发布；普通构建不传此参数。
 App 内更新下载不采集纪念日、照片或分类。GitHub 自身会处理常规访问日志。
+
+## 1.8.0 桌面图标升级说明
+
+未配对为 B 心动日历，确认配对后为 C 双人轨道。别名切换不会清除记录或重新配置纪念日小组件。桌面可能缓存旧图标；从旧版本保留、直接指向 MainActivity 的固定快捷方式也可能继续使用个人图标。此时只移除桌面快捷方式，从应用列表重新添加，不要卸载应用。未验证全部厂商桌面、Android 8–15 或实际手机上的缓存处理。

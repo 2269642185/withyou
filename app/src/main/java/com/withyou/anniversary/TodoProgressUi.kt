@@ -30,9 +30,9 @@ internal fun TodoProgressPanel(book:TodoBook,name:String,date:LocalDate,pending:
         Column(Modifier.fillMaxWidth().padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
             Text("今日进度",fontWeight=FontWeight.SemiBold,style=MaterialTheme.typography.titleSmall)
             PersonProgress(name.ifBlank {"自己"},TodoRules.progress(book,book.uid,date),"self")
-            if(book.partnerId.isNotBlank()) PersonProgress(book.partnerName.ifBlank {"伙伴"},TodoRules.progress(book,book.partnerId,date),"partner")
+            if(book.pairId.isNotBlank() && book.partnerId.isNotBlank()) PersonProgress(book.partnerName.ifBlank {"伙伴"},TodoRules.progress(book,book.partnerId,date),"partner")
             val stamp=if(book.syncedAt==0L) "尚未同步" else "同步于 "+DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(TodoRules.zone).format(Instant.ofEpochMilli(book.syncedAt))
-            Text(if(pending) "本机变化待同步 · 伙伴进度可能延迟" else "$stamp · 伙伴仅含共享事项",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if(book.pairId.isNotBlank()) {if(pending) "本机变化待同步 · 伙伴进度可能延迟" else "$stamp · 伙伴仅含共享事项"} else if(book.uid==LOCAL_TODO_UID) "仅保存在这台设备" else if(pending) "本机变化待同步" else stamp,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -61,6 +61,7 @@ private fun PersonProgress(name:String,progress:TodoRules.Progress,key:String) {
 /** Initialize from the first confirmed snapshot. Reopening a page never replays old celebrations. */
 @Composable
 internal fun TodoTogetherCelebration(book:TodoBook,date:LocalDate,confirmed:Boolean) {
+    if(book.pairId.isBlank()) return
     val context=LocalContext.current
     val ledger=remember {context.getSharedPreferences("todo_celebrations",Context.MODE_PRIVATE)}
     val motion=LocalMotionEnabled.current

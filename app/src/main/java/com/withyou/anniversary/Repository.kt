@@ -136,7 +136,7 @@ class Repository(private val context: Context) {
         fun encode(data: AppData): String = JSONObject().apply {
             put("version", 3)
             put("theme", data.preferences.theme.name); put("defaultMode", data.preferences.defaultMode.name)
-            put("animations", data.preferences.animations)
+            put("animations", data.preferences.animations); put("palette",data.preferences.palette.name)
             put("categories", JSONArray().apply { data.categories.forEach { c -> put(JSONObject().apply {
                 put("id",c.id);put("name",c.name);put("icon",c.icon);put("color",c.color)
             }) } })
@@ -189,7 +189,7 @@ class Repository(private val context: Context) {
             }
             require(records.map { it.id }.distinct().size == records.size) { "纪念日编号重复" }
             require(records.count { it.pinned } <= 1) { "只能置顶一个纪念日" }
-            return AppData(records, Preferences(AppTheme.valueOf(obj.getString("theme")), CountMode.valueOf(obj.getString("defaultMode")),obj.optBoolean("animations",true)),categories)
+            return AppData(records, Preferences(AppTheme.valueOf(obj.getString("theme")), CountMode.valueOf(obj.getString("defaultMode")),obj.optBoolean("animations",true),AppPalette.fromKey(obj.optString("palette","CREAM"))),categories)
         }
         private fun copyLimited(input: java.io.InputStream, output: java.io.OutputStream, max: Long): Long {
             var size = 0L

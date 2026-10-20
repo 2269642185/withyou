@@ -5,7 +5,11 @@ import java.time.MonthDay
 import java.time.temporal.ChronoUnit
 
 enum class CountMode(val label: String) { INCLUSIVE("开始当天算第 1 天"), ELAPSED("实际间隔天数") }
-enum class AppTheme(val label: String) { SYSTEM("跟随系统"), LIGHT("暖白浅色"), DARK("温柔深色") }
+enum class AppTheme(val label: String) { SYSTEM("跟随系统"), LIGHT("浅色"), DARK("深色") }
+enum class AppPalette(val label: String) {
+    CREAM("奶油杏"), MINT("薄荷绿"), ROSE("樱花粉"), BLUE("雾霾蓝"), LAVENDER("薰衣草紫"), OAT("燕麦棕");
+    companion object { fun fromKey(key: String) = entries.firstOrNull { it.name == key } ?: CREAM }
+}
 data class MemoryDay(
     val id: String,
     val title: String,
@@ -20,7 +24,7 @@ data class MemoryDay(
     val template: CardTemplate = CardTemplate.CLASSIC,
 )
 data class Category(val id: String, val name: String, val icon: String = "heart", val color: Int = 0)
-data class Preferences(val theme: AppTheme = AppTheme.SYSTEM, val defaultMode: CountMode = CountMode.INCLUSIVE, val animations: Boolean = true)
+data class Preferences(val theme: AppTheme = AppTheme.SYSTEM, val defaultMode: CountMode = CountMode.INCLUSIVE, val animations: Boolean = true, val palette: AppPalette = AppPalette.CREAM)
 data class AppData(val records: List<MemoryDay> = emptyList(), val preferences: Preferences = Preferences(), val categories: List<Category> = emptyList()) {
     fun ordered() = records.sortedWith(compareByDescending<MemoryDay> { it.pinned }.thenBy { it.date }.thenBy { it.id })
     fun deleteCategory(id: String) = copy(categories = categories.filterNot { it.id == id }, records = records.map { if (it.categoryId == id) it.copy(categoryId = null) else it })

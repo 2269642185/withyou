@@ -22,6 +22,7 @@ import java.time.LocalDate
 internal fun MemoryShareAction(record:MemoryDay,vm:TodoViewModel,manage:()->Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val book=state.book
+    if(state.session?.admitted!=true || book?.pairId.isNullOrBlank()) return
     val current=book?.memories?.find {it.id==record.id && it.owner==book.uid && it.active}
     val job=book?.shareJobs?.find {it.id==record.id}
     val shared=job?.active ?: (current!=null)

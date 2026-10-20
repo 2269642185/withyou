@@ -74,12 +74,12 @@ class AppFlowTest {
             compose.onNodeWithContentDescription("返回").performClick()
             compose.onNodeWithText("设置",substring=false).performClick()
             waitText("留给日常的偏爱");screenshot("04-settings")
-            compose.onNodeWithText("温柔深色").performClick()
+            compose.onNodeWithText("深色").performScrollTo().performClick()
             compose.waitUntil(10000) {Repository(context).read().preferences.theme==AppTheme.DARK}
             compose.waitForIdle()
             Thread.sleep(400) // Let the rendered frame catch up before the shell screenshot.
             screenshot("05-dark")
-            compose.onNodeWithText("暖白浅色").performClick()
+            compose.onNodeWithText("浅色").performScrollTo().performClick()
         }
     }
 }

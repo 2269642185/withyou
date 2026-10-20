@@ -54,11 +54,11 @@ internal fun CompactTodoCard(task:TodoTask,book:TodoBook,name:String,date:LocalD
             if(task.notes.isNotBlank()) Text(task.notes,style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis,color=ink.onSurfaceVariant)
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                    Surface(shape=RoundedCornerShape(7.dp),color=ink.primaryContainer,contentColor=ink.primary) {
+                    if(book.pairId.isNotBlank()) Surface(shape=RoundedCornerShape(7.dp),color=ink.primaryContainer,contentColor=ink.primary) {
                         Text(if(task.kind==TodoKind.SHARED) "共同事项" else if(mine) name else book.partnerName,
                             Modifier.padding(horizontal=7.dp,vertical=3.dp),style=MaterialTheme.typography.labelSmall,maxLines=1,overflow=TextOverflow.Ellipsis)
                     }
-                    Text(taskSummary(task,date,TodoRules.complete(book,task,task.owner,date)),style=MaterialTheme.typography.labelSmall,color=ink.onSurfaceVariant)
+                    Text(taskSummary(task,date,TodoRules.complete(book,task,task.owner,date),book.pairId.isNotBlank()),style=MaterialTheme.typography.labelSmall,color=ink.onSurfaceVariant)
                 }
                 if(mine || task.kind==TodoKind.SHARED) {
                     val interaction=remember(task.id) {MutableInteractionSource()}
@@ -81,7 +81,7 @@ internal fun CompactTodoCard(task:TodoTask,book:TodoBook,name:String,date:LocalD
     }
 }
 
-private fun taskSummary(task:TodoTask,date:LocalDate,done:Boolean):String {
+private fun taskSummary(task:TodoTask,date:LocalDate,done:Boolean,paired:Boolean):String {
     val schedule=if(task.kind==TodoKind.TODO) task.due?.let {
         val label=if(it.year==date.year) "${it.monthValue}月${it.dayOfMonth}日" else "${it.year}.${it.monthValue}.${it.dayOfMonth}"
         if(it<date && !done) "已逾期 · $label" else "$label 到期"
@@ -91,5 +91,5 @@ private fun taskSummary(task:TodoTask,date:LocalDate,done:Boolean):String {
         setOf(6,7)->"周末"
         else->"周"+task.weekdays.sorted().joinToString("、") {"一二三四五六日"[it-1].toString()}
     }
-    return schedule+if(!task.shared) " · 仅自己" else ""
+    return schedule+if(paired && !task.shared) " · 仅自己" else ""
 }

@@ -13,6 +13,8 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.time.LocalDate
 
+internal const val LOCAL_TODO_UID="local-personal-device"
+
 data class TodoState(val ready:Boolean=false,val session:TodoSession?=null,val book:TodoBook?=null,val busy:Boolean=false,
     val photoVersion:Long=0,val message:String="",val syncLabel:String="尚未登录",val invitationCode:String="",val failed:Boolean=false,
     val mailChallenge:EmailChallenge?=null,val contactEmail:String="",val friendLink:String="",val incomingInvite:String="")
@@ -21,6 +23,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
     private val store=TodoStore(app)
     val sharedPhotos=SharedPhotoStore(app)
     private val sessions=TodoSessionStore(app)
+    private val launcher=LauncherIcons(app)
     private val prefs=app.getSharedPreferences("todo_device",Context.MODE_PRIVATE)
     private val device=prefs.getString("id",null) ?: TodoCloud.newDeviceId().also {prefs.edit().putString("id",it).apply()}
     private val cloud=TodoCloud(device)
@@ -51,8 +54,9 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
     init {connectivity.registerDefaultNetworkCallback(networkCallback);viewModelScope.launch {withContext(Dispatchers.IO) {
         try {
             val session=sessions.read()
-            val book=session?.let {store.read(it.uid)}
-            mutable.value=TodoState(ready=true,session=session,book=book,syncLabel=if(session==null) "尚未登录" else "等待同步",incomingInvite=mutable.value.incomingInvite)
+            val book=store.read(session?.uid ?: LOCAL_TODO_UID)
+            if(session?.admitted==true && !launcher.knows(session.uid)) launcher.confirm(session.uid,book.pairId.isNotBlank())
+            mutable.value=TodoState(ready=true,session=session,book=book,syncLabel=if(session==null) "仅保存在本机" else "等待同步",incomingInvite=mutable.value.incomingInvite)
         } catch(_:Exception) {mutable.value=TodoState(ready=true,message="本机打卡数据或登录凭据暂时无法读取，请保留应用并检查备份",failed=true)}
     }}}
     private fun act(block:suspend ()->Unit) {viewModelScope.launch {mutex.withLock {
@@ -65,12 +69,12 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         val old=mutable.value.session
         withContext(Dispatchers.IO) {sessions.save(null);old?.let {sharedPhotos.clear(it.uid)}}
         bindGrant=""
-        mutable.value=TodoState(ready=true,message=message)
+        mutable.value=TodoState(ready=true,book=withContext(Dispatchers.IO) {store.read(LOCAL_TODO_UID)},syncLabel="仅保存在本机",message=message)
     }
     private suspend fun save(book:TodoBook) {
         withContext(Dispatchers.IO) {store.write(book)}
         if(failures==0 && (book.pending.isNotEmpty() || book.shareJobs.isNotEmpty())) nextAttempt=0
-        mutable.value=mutable.value.copy(book=book,syncLabel=if(book.pending.isEmpty() && book.shareJobs.isEmpty()) "等待同步" else "等待同步 · ${book.pending.size+book.shareJobs.size} 项")
+        mutable.value=mutable.value.copy(book=book,syncLabel=if(book.uid==LOCAL_TODO_UID) "仅保存在本机" else if(book.pending.isEmpty() && book.shareJobs.isEmpty()) "等待同步" else "等待同步 · ${book.pending.size+book.shareJobs.size} 项")
     }
     fun login(username:String,password:String) = act {
         val account=if(username.contains('@')) EmailRules.email(username) else username.trim().also {require(it.matches(Regex("[A-Za-z0-9][A-Za-z0-9_.-]{1,47}"))) {"请输入邮箱或原用户名"}}
@@ -78,6 +82,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         val incoming=mutable.value.incomingInvite
         val session=cloud.login(account,password)
         val book=withContext(Dispatchers.IO) {store.read(session.uid).also {sessions.save(session)}}
+        launcher.forAccount(session.uid)
         mutable.value=TodoState(ready=true,session=session,book=book,busy=true,syncLabel="等待同步",incomingInvite=incoming)
         failures=0;nextAttempt=0
     }
@@ -101,6 +106,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         val result=emailAuth.register(challenge,address,code,password)
         val session=cloud.sessionFromTokens(result,nickname.trim())
         withContext(Dispatchers.IO) {sessions.save(session)}
+        launcher.forAccount(session.uid)
         mutable.value=TodoState(ready=true,session=session,book=withContext(Dispatchers.IO) {store.read(session.uid)},busy=true,incomingInvite=invite)
         admitFriend(nickname,invite)
     }
@@ -148,7 +154,8 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         bindGrant=""
         val old=mutable.value.session
         withContext(Dispatchers.IO) {sessions.save(null);old?.let {sharedPhotos.clear(it.uid)}}
-        mutable.value=TodoState(ready=true,busy=true,message="已退出。本机个人记录和待同步操作按账号保留。")
+        launcher.logout()
+        mutable.value=TodoState(ready=true,book=withContext(Dispatchers.IO) {store.read(LOCAL_TODO_UID)},syncLabel="仅保存在本机",busy=true,message="已退出。登录前的个人打卡仍在本机，账号记录按账号单独保留。")
         if(old!=null) runCatching {cloud.signOut(old)}
     }
     fun saveTask(task:TodoTask,onSaved:()->Unit)=act {
@@ -160,7 +167,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         require(old==null || !old.deleted && old.kind==task.kind) {"已删除事项不能恢复，事项类型创建后不可更改"}
         val body=task.json().put("type","task").put("expected",old?.revision ?: 0)
         val local=task.copy(revision=(old?.revision ?: 0)+1)
-        save(book.copy(tasks=book.tasks.filterNot {it.id==task.id}+local,pending=book.pending+TodoOperation(taskId=task.id,body=body.toString())))
+        save(book.copy(tasks=book.tasks.filterNot {it.id==task.id}+local,pending=if(book.uid==LOCAL_TODO_UID) emptyList() else book.pending+TodoOperation(taskId=task.id,body=body.toString())))
         onSaved()
     }
     fun toggle(task:TodoTask,date:LocalDate)=act {
@@ -170,13 +177,14 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         val old=book.checks.find {it.taskId==task.id && it.user==book.uid && it.day==day}
         val value=TodoCheck(task.id,book.uid,day,!(old?.done ?: false),(old?.revision ?: 0)+1,date)
         val body=JSONObject().put("type","check").put("id",task.id).put("expected",old?.revision ?: 0).put("pair_id",task.pairId).put("day",day.toString()).put("completed_on",date.toString()).put("done",value.done)
-        save(book.copy(checks=book.checks.filterNot {it.taskId==task.id && it.user==book.uid && it.day==day}+value,pending=book.pending+TodoOperation(taskId=task.id,body=body.toString())))
+        save(book.copy(checks=book.checks.filterNot {it.taskId==task.id && it.user==book.uid && it.day==day}+value,pending=if(book.uid==LOCAL_TODO_UID) emptyList() else book.pending+TodoOperation(taskId=task.id,body=body.toString())))
     }
     fun acknowledge()=act {mutable.value.book?.let {save(it.copy(conflicts=emptyList()))}}
     fun pair(action:String,value:String="")=act {
         val session=freshSession()
         val result=cloud.pair(session,action,value)
         if(action=="unlink") {
+            launcher.confirm(session.uid,false)
             val book=mutable.value.book!!
             val own=TodoRules.prune(book,"",emptySet())
             val stopped=own.pending.filter {JSONObject(it.body).str("pair_id").isNotBlank()}.map {op->
@@ -253,6 +261,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
                 val merged=book.copy(tasks=(book.tasks.filter {it.id in allIds && it.id !in remoteTasks.map(TodoTask::id).toSet()}+remoteTasks),checks=(book.checks.filter {old->old.taskId in allIds && remoteChecks.none {it.taskId==old.taskId && it.user==old.user && it.day==old.day}}+remoteChecks),
                     pairId=refreshed.str("pair_id"),partnerId=refreshed.str("partner_id"),partnerName=refreshed.str("partner_name","伙伴"),invites=refreshed.getJSONArray("invites").mapObjects(::inviteFromJson),taskCursor=refreshed.getLong("task_cursor"),checkCursor=refreshed.getLong("check_cursor"),syncedAt=System.currentTimeMillis(),conflicts=conflicts.takeLast(20))
                 save(merged)
+                launcher.confirm(session.uid,merged.pairId.isNotBlank())
                 syncMemories(session)
                 failures=0;networkRetries=0;nextAttempt=System.currentTimeMillis()+30000
                 mutable.value=mutable.value.copy(syncLabel="已同步 · 上海时间",message=if(manual) "同步完成" else "")
