@@ -137,6 +137,10 @@ class Repository(private val context: Context) {
             put("version", 3)
             put("theme", data.preferences.theme.name); put("defaultMode", data.preferences.defaultMode.name)
             put("animations", data.preferences.animations); put("palette",data.preferences.palette.name)
+            put("statusFaces",JSONObject().apply {
+                put("enabled",data.preferences.statusFaces.enabled)
+                CheckStatus.entries.forEach { put(it.name,data.preferences.statusFaces.face(it).name) }
+            })
             put("categories", JSONArray().apply { data.categories.forEach { c -> put(JSONObject().apply {
                 put("id",c.id);put("name",c.name);put("icon",c.icon);put("color",c.color)
             }) } })
@@ -189,7 +193,12 @@ class Repository(private val context: Context) {
             }
             require(records.map { it.id }.distinct().size == records.size) { "纪念日编号重复" }
             require(records.count { it.pinned } <= 1) { "只能置顶一个纪念日" }
-            return AppData(records, Preferences(AppTheme.valueOf(obj.getString("theme")), CountMode.valueOf(obj.getString("defaultMode")),obj.optBoolean("animations",true),AppPalette.fromKey(obj.optString("palette","CREAM"))),categories)
+            val faces=obj.optJSONObject("statusFaces")
+            val statusFaces=StatusFaces(faces?.optBoolean("enabled",true) ?: true,
+                StatusFace.fromKey(faces?.optString("DONE"),StatusFace.HAPPY),
+                StatusFace.fromKey(faces?.optString("PENDING"),StatusFace.CALM),
+                StatusFace.fromKey(faces?.optString("OVERDUE"),StatusFace.CRYING))
+            return AppData(records, Preferences(AppTheme.valueOf(obj.getString("theme")), CountMode.valueOf(obj.getString("defaultMode")),obj.optBoolean("animations",true),AppPalette.fromKey(obj.optString("palette","CREAM")),statusFaces),categories)
         }
         private fun copyLimited(input: java.io.InputStream, output: java.io.OutputStream, max: Long): Long {
             var size = 0L

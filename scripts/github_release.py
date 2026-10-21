@@ -14,10 +14,13 @@ def main():
     parser.add_argument('--repo',default='2269642185/withyou')
     parser.add_argument('--bundle',type=Path,required=True)
     parser.add_argument('--commit',required=True)
+    parser.add_argument('--tag',help='Optional immutable build tag, matching prepare_release.py')
     args=parser.parse_args()
     bundle=args.bundle.resolve(); assets=bundle/'assets'
     manifest=json.loads((assets/'update.json').read_text(encoding='utf-8'))
-    tag='v'+manifest['versionName']
+    tag=args.tag or 'v'+manifest['versionName']
+    if tag not in ['v'+manifest['versionName'],f'v{manifest["versionName"]}-build{manifest["versionCode"]}']:
+        parser.error('Tag must match the version and build code')
     if not manifest['apkUrl'].startswith(f'https://github.com/{args.repo}/releases/download/{tag}/'):
         parser.error('Manifest repository mismatch')
     import hashlib

@@ -12,7 +12,7 @@ android {
         }
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("updateFixtureCode").orElse("12").get().toInt()
+        versionCode = providers.gradleProperty("updateFixtureCode").orElse("13").get().toInt()
         versionName = "1.8.1"
         buildConfigField("String", "CLOUD_ENV", "\"withyou-sync-d0gg468vheead040b\"")
         buildConfigField("String", "CLOUD_REGISTER_URL", "\"${providers.gradleProperty("cloudRegisterUrl").orElse("https://withyou-sync-d0gg468vheead040b-1322438694.ap-shanghai.app.tcloudbase.com/withyou-register").get().replace("\\", "\\\\").replace("\"", "\\\"")}\"")

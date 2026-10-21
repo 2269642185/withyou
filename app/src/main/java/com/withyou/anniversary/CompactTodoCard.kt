@@ -30,6 +30,8 @@ internal fun CompactTodoCard(task:TodoTask,book:TodoBook,name:String,date:LocalD
     val partnerDone=TodoRules.complete(book,task,book.partnerId,date)
     val both=TodoRules.bothComplete(book,task,date)
     val mine=task.owner==book.uid
+    val status=checkStatus(task,book,if(task.kind==TodoKind.SHARED) book.uid else task.owner,date)
+    val faces=LocalStatusFaces.current
     val ink=MaterialTheme.colorScheme
     val color by animateColorAsState(if(done && (mine || task.kind==TodoKind.SHARED) || both) ink.secondaryContainer else ink.surfaceVariant,
         tween(if(LocalMotionEnabled.current) 220 else 0),label="打卡完成")
@@ -58,7 +60,12 @@ internal fun CompactTodoCard(task:TodoTask,book:TodoBook,name:String,date:LocalD
                         Text(if(task.kind==TodoKind.SHARED) "共同事项" else if(mine) name else book.partnerName,
                             Modifier.padding(horizontal=7.dp,vertical=3.dp),style=MaterialTheme.typography.labelSmall,maxLines=1,overflow=TextOverflow.Ellipsis)
                     }
-                    Text(taskSummary(task,date,TodoRules.complete(book,task,task.owner,date),book.pairId.isNotBlank()),style=MaterialTheme.typography.labelSmall,color=ink.onSurfaceVariant)
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                        if(faces.enabled && status!=null) SmallStatusFace(faces.face(status))
+                        val summary=taskSummary(task,date,TodoRules.complete(book,task,task.owner,date),book.pairId.isNotBlank())
+                        Text(if(status==CheckStatus.OVERDUE) summary else (status?.label?.plus(" · ") ?: "")+summary,
+                            modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelSmall,color=ink.onSurfaceVariant)
+                    }
                 }
                 if(mine || task.kind==TodoKind.SHARED) {
                     val interaction=remember(task.id) {MutableInteractionSource()}

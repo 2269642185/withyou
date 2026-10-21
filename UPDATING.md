@@ -16,12 +16,12 @@ App 通过 GitHub Releases 的 `releases/latest/download/update.json` 读取更�
 
 ## 构建与手动发布
 
-1. 在 `app/build.gradle.kts` 增加 versionCode 和 versionName；同步 RELEASE-NOTES.md。
+1. 在 `app/build.gradle.kts` 增加 versionCode，按发布计划设置 versionName；同步 RELEASE-NOTES.md。
 2. 使用原开发电脑的同一签名构建。`build-local.ps1 -Test` 完成验证。
 3. 生成发布文件：
 
 ```powershell
-python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.apk --notes RELEASE-NOTES.md --version 1.8.1 --code 12 --out release-output/v1.8.1
+python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.apk --notes RELEASE-NOTES.md --version 1.8.1 --code 13 --tag v1.8.1-build13 --out release-output/v1.8.1-build13
 ```
 
 4. 将 `release-output/site/` 内容复制至仓库的 `docs/`，提交已验证源码、文档和 docs。不要提交 APK 到 Git 历史。
@@ -30,7 +30,7 @@ python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.ap
 7. 在上述持续授权范围内，使用已登录 Git 凭据的手动脚本：
 
 ```powershell
-python scripts/github_release.py --bundle release-output/v1.8.1 --commit 实际已推送提交SHA
+python scripts/github_release.py --bundle release-output/v1.8.1-build13 --tag v1.8.1-build13 --commit 实际已推送提交SHA
 ```
 
 脚本只在手动运行时发布，没有定时任务、推送触发的版本发布或自动更新签名。若版本标签已存在，不覆盖已有版本；先检查后台是否留下未发布草稿。
@@ -47,3 +47,5 @@ App 内更新下载不采集纪念日、照片或分类。GitHub 自身会处理
 ## 1.8.0 桌面图标升级说明
 
 未配对为 B 心动日历，确认配对后为 C 双人轨道。别名切换不会清除记录或重新配置纪念日小组件。桌面可能缓存旧图标；从旧版本保留、直接指向 MainActivity 的固定快捷方式也可能继续使用个人图标。此时只移除桌面快捷方式，从应用列表重新添加，不要卸载应用。未验证全部厂商桌面、Android 8–15 或实际手机上的缓存处理。
+
+同版本名增补：1.8.1 构建 13 使用新不可变标签 v1.8.1-build13，旧 v1.8.1 附件保持不变。prepare_release.py 和 github_release.py 同传 --tag；手机按内部构建号比较，构建 12 可发现 13。

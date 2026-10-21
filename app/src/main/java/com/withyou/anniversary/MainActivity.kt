@@ -182,7 +182,7 @@ fun AnniversaryApp(requestedId: String? = null, consumed: () -> Unit = {}, vm: M
         fun add() { selected = null; route = "editor" }
         fun open(id: String) { selected = id; route = "detail" }
         BackHandler(enabled = route != "home" && route != "editor" && !busy) { route = "home" }
-        CompositionLocalProvider(LocalMotionEnabled provides rememberMotionEnabled(data.preferences.animations)) {
+        CompositionLocalProvider(LocalMotionEnabled provides rememberMotionEnabled(data.preferences.animations),LocalStatusFaces provides data.preferences.statusFaces) {
         Scaffold(
             containerColor = colors.background,
             snackbarHost = { SnackbarHost(snackbar) },
@@ -550,6 +550,7 @@ private fun Settings(data: AppData, vm: MainViewModel, busy: Boolean, updates: (
         Text("主题配色",fontWeight=FontWeight.SemiBold)
         PalettePicker(data.preferences.palette,!busy) { palette -> vm.update(transform={it.copy(preferences=it.preferences.copy(palette=palette))}) }
         Text("仅改变这台设备的界面配色，保留纪念日的自定义样式。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        StatusFaceSettings(data.preferences.statusFaces,!busy) { faces -> vm.update(transform={it.copy(preferences=it.preferences.copy(statusFaces=faces))}) }
         Text("新纪念日的默认计数",fontWeight=FontWeight.SemiBold)
         CountMode.entries.forEach { mode -> SelectionRow(mode.label,data.preferences.defaultMode==mode) { vm.update(transform={it.copy(preferences=it.preferences.copy(defaultMode=mode))}) } }
         Text("仅影响之后新建的记录。已有纪念日可在编辑页单独修改。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)

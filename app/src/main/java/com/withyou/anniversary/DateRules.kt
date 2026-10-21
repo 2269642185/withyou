@@ -24,7 +24,7 @@ data class MemoryDay(
     val template: CardTemplate = CardTemplate.CLASSIC,
 )
 data class Category(val id: String, val name: String, val icon: String = "heart", val color: Int = 0)
-data class Preferences(val theme: AppTheme = AppTheme.SYSTEM, val defaultMode: CountMode = CountMode.INCLUSIVE, val animations: Boolean = true, val palette: AppPalette = AppPalette.CREAM)
+data class Preferences(val theme: AppTheme = AppTheme.SYSTEM, val defaultMode: CountMode = CountMode.INCLUSIVE, val animations: Boolean = true, val palette: AppPalette = AppPalette.CREAM, val statusFaces: StatusFaces = StatusFaces())
 data class AppData(val records: List<MemoryDay> = emptyList(), val preferences: Preferences = Preferences(), val categories: List<Category> = emptyList()) {
     fun ordered() = records.sortedWith(compareByDescending<MemoryDay> { it.pinned }.thenBy { it.date }.thenBy { it.id })
     fun deleteCategory(id: String) = copy(categories = categories.filterNot { it.id == id }, records = records.map { if (it.categoryId == id) it.copy(categoryId = null) else it })
