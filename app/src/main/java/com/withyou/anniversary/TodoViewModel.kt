@@ -17,16 +17,17 @@ internal const val LOCAL_TODO_UID="local-personal-device"
 
 data class TodoState(val ready:Boolean=false,val session:TodoSession?=null,val book:TodoBook?=null,val busy:Boolean=false,
     val photoVersion:Long=0,val message:String="",val syncLabel:String="尚未登录",val invitationCode:String="",val failed:Boolean=false,
-    val mailChallenge:EmailChallenge?=null,val contactEmail:String="",val friendLink:String="",val incomingInvite:String="")
+    val mailChallenge:EmailChallenge?=null,val contactEmail:String="",val friendLink:String="",val incomingInvite:String="",val reauthRequired:Boolean=false,val syncDetail:String="")
 
-class TodoViewModel(app:Application):AndroidViewModel(app) {
+class TodoViewModel @JvmOverloads constructor(app:Application, suppliedCloud:TodoCloud?=null):AndroidViewModel(app) {
     private val store=TodoStore(app)
     val sharedPhotos=SharedPhotoStore(app)
     private val sessions=TodoSessionStore(app)
     private val launcher=LauncherIcons(app)
     private val prefs=app.getSharedPreferences("todo_device",Context.MODE_PRIVATE)
     private val device=prefs.getString("id",null) ?: TodoCloud.newDeviceId().also {prefs.edit().putString("id",it).apply()}
-    private val cloud=TodoCloud(device)
+    private val cloud=suppliedCloud ?: TodoCloud(device)
+    private val refresher=SessionRefresher(sessions,cloud::refresh)
     private val mutex=Mutex()
     private val emailAuth=EmailAuth(call={path,body,token,method->cloud.request(path,body,token,method=method)})
     private var bindGrant=""
@@ -62,9 +63,15 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
     private fun act(block:suspend ()->Unit) {viewModelScope.launch {mutex.withLock {
         mutable.value=mutable.value.copy(busy=true,message="")
         try {block()} catch(e:CancellationException) {throw e}
-        catch(e:Exception) {if(e is TodoCloudError && e.reason.contains("SESSION_REVOKED")) expireSession(e.message.orEmpty()) else mutable.value=mutable.value.copy(message=if(e is TodoCloudError || e is IllegalArgumentException) e.message.orEmpty() else "操作未完成，请检查网络后重试；已保存的记录仍在本机")}
+        catch(e:Exception) {if(e is TodoCloudError && e.reason.contains("SESSION_REVOKED")) expireSession(e.message.orEmpty()) else if(e is TodoCloudError && e.requiresLogin && mutable.value.session!=null) requireLogin(e) else mutable.value=mutable.value.copy(message=if(e is TodoCloudError || e is IllegalArgumentException) e.message.orEmpty() else "操作未完成，请检查网络后重试；已保存的记录仍在本机")}
         finally {mutable.value=mutable.value.copy(busy=false)}
     }}}
+    private fun requireLogin(error:TodoCloudError) {
+        networkRetries=0
+        val book=mutable.value.book
+        mutable.value=mutable.value.copy(reauthRequired=true,syncLabel="需要重新登录 · 本机记录已保留",
+            message=error.message.orEmpty(),syncDetail=syncDiagnostic(error,book?.pending?.size ?: 0,book?.shareJobs?.size ?: 0))
+    }
     private suspend fun expireSession(message:String) {
         val old=mutable.value.session
         withContext(Dispatchers.IO) {sessions.save(null);old?.let {sharedPhotos.clear(it.uid)}}
@@ -74,7 +81,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
     private suspend fun save(book:TodoBook) {
         withContext(Dispatchers.IO) {store.write(book)}
         if(failures==0 && (book.pending.isNotEmpty() || book.shareJobs.isNotEmpty())) nextAttempt=0
-        mutable.value=mutable.value.copy(book=book,syncLabel=if(book.uid==LOCAL_TODO_UID) "仅保存在本机" else if(book.pending.isEmpty() && book.shareJobs.isEmpty()) "等待同步" else "等待同步 · ${book.pending.size+book.shareJobs.size} 项")
+        mutable.value=mutable.value.copy(book=book,syncLabel=if(mutable.value.reauthRequired) "需要重新登录 · 本机记录已保留" else if(book.uid==LOCAL_TODO_UID) "仅保存在本机" else if(book.pending.isEmpty() && book.shareJobs.isEmpty()) "等待同步" else "等待同步 · ${book.pending.size+book.shareJobs.size} 项")
     }
     fun login(username:String,password:String) = act {
         val account=if(username.contains('@')) EmailRules.email(username) else username.trim().also {require(it.matches(Regex("[A-Za-z0-9][A-Za-z0-9_.-]{1,47}"))) {"请输入邮箱或原用户名"}}
@@ -197,24 +204,31 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
         mutable.value=mutable.value.copy(invitationCode=result.str("code"),message=when(action) {"create"->"邀请码 10 分钟内有效，请私下发送给伙伴";"join"->"申请已发送，等待对方确认";"confirm"->"已成为彼此的伙伴";"unlink"->"已解除配对";else->"申请已取消"})
         nextAttempt=0
     }
-    private suspend fun freshSession():TodoSession {
-        var session=mutable.value.session ?: throw IllegalArgumentException("请先登录")
-        if(session.expiresAt<System.currentTimeMillis()+60000) {
-            session=cloud.refresh(session)
-            withContext(Dispatchers.IO) {sessions.save(session)}
-            mutable.value=mutable.value.copy(session=session)
-        }
+    private suspend fun freshSession(force:Boolean=false):TodoSession {
+        val current=mutable.value.session ?: throw IllegalArgumentException("请先登录")
+        if(mutable.value.reauthRequired) throw TodoCloudError(401,"SESSION_REAUTH_REQUIRED",SyncStage.SESSION)
+        val session=refresher.fresh(current,force)
+        mutable.value=mutable.value.copy(session=session)
         return session
     }
     fun sync(manual:Boolean=false) {
-        if(syncJob?.isActive==true || mutable.value.busy || mutable.value.session?.admitted!=true || mutable.value.failed || !manual && System.currentTimeMillis()<nextAttempt) return
+        if(syncJob?.isActive==true || mutable.value.busy || mutable.value.reauthRequired || mutable.value.session?.admitted!=true || mutable.value.failed || !manual && System.currentTimeMillis()<nextAttempt) return
         syncJob=viewModelScope.launch {mutex.withLock {
             mutable.value=mutable.value.copy(busy=true,syncLabel="正在同步…")
             try {
-                val session=freshSession()
+                var session=freshSession()
+                var retriedAuthentication=false
+                suspend fun <T> authorized(call:suspend (TodoSession)->T):T {
+                    try {return call(session)} catch(e:TodoCloudError) {
+                        if(e.status!=401 || e.reason.contains("SESSION_REVOKED") || retriedAuthentication) throw e
+                        retriedAuthentication=true
+                        session=freshSession(force=true)
+                        return call(session)
+                    }
+                }
                 var book=mutable.value.book!!
                 // Check membership first. Never send an old pair's queue before checking revocation.
-                val snapshot=cloud.snapshot(session,book)
+                val snapshot=authorized {cloud.snapshot(it,book)}
                 val pair=snapshot.str("pair_id")
                 val visible=snapshot.getJSONArray("visible_ids").let {a->(0 until a.length()).map {a.getString(it)}.toSet()}
                 val safePending=book.pending.filter {op ->
@@ -239,7 +253,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
                 for(op in safePending) {
                     if(op.taskId in failedTasks) {book=book.copy(pending=book.pending.filterNot {it.id==op.id});continue}
                     try {
-                        val result=cloud.apply(session,op)
+                        val result=authorized {cloud.apply(it,op)}
                         if(result.optBoolean("conflict")) {
                             val draft=JSONObject(op.body)
                             conflicts.add(result.str("message","其他设备已修改")+draft.str("title").takeIf {it.isNotBlank()}?.let {"；本机草稿：$it\n${draft.str("notes")}"}.orEmpty())
@@ -253,7 +267,7 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
                     save(book)
                 }
                 // Force full data refresh after optimistic local writes, since dropped drafts may share server revisions.
-                val refreshed=if(safePending.isEmpty() && dropped==0) snapshot else cloud.snapshot(session,book.copy(taskCursor=0,checkCursor=0))
+                val refreshed=if(safePending.isEmpty() && dropped==0) snapshot else authorized {cloud.snapshot(it,book.copy(taskCursor=0,checkCursor=0))}
                 val remoteTasks=refreshed.getJSONArray("tasks").mapObjects(::taskFromJson)
                 val remoteChecks=refreshed.getJSONArray("checks").mapObjects(::checkFromJson)
                 val allIds=refreshed.getJSONArray("visible_ids").let {a->(0 until a.length()).map {a.getString(it)}.toSet()}
@@ -262,14 +276,15 @@ class TodoViewModel(app:Application):AndroidViewModel(app) {
                     pairId=refreshed.str("pair_id"),partnerId=refreshed.str("partner_id"),partnerName=refreshed.str("partner_name","伙伴"),invites=refreshed.getJSONArray("invites").mapObjects(::inviteFromJson),taskCursor=refreshed.getLong("task_cursor"),checkCursor=refreshed.getLong("check_cursor"),syncedAt=System.currentTimeMillis(),conflicts=conflicts.takeLast(20))
                 save(merged)
                 launcher.confirm(session.uid,merged.pairId.isNotBlank())
-                syncMemories(session)
+                authorized {syncMemories(it)}
                 failures=0;networkRetries=0;nextAttempt=System.currentTimeMillis()+30000
-                mutable.value=mutable.value.copy(syncLabel="已同步 · 上海时间",message=if(manual) "同步完成" else "")
+                mutable.value=mutable.value.copy(syncLabel="已同步 · 上海时间",syncDetail="",message=if(manual) "同步完成" else "")
             } catch(e:CancellationException) {throw e}
             catch(e:Exception) {
                 failures=(failures+1).coerceAtMost(5);nextAttempt=System.currentTimeMillis()+(30000L shl failures).coerceAtMost(600000)
                 if(e is TodoCloudError && e.reason.contains("SESSION_REVOKED")) expireSession(e.message.orEmpty())
-                else mutable.value=mutable.value.copy(syncLabel="同步失败 · 本机记录已保留",message=when {e is TodoCloudError || e is IllegalArgumentException->e.message.orEmpty();manual->"网络暂时不可用，已保存到本机，恢复连接后会继续同步";else->mutable.value.message})
+                else if(e is TodoCloudError && e.requiresLogin) requireLogin(e)
+                else mutable.value=mutable.value.copy(syncLabel="同步失败 · 本机记录已保留",syncDetail=syncDiagnostic(e as? TodoCloudError,mutable.value.book?.pending?.size ?: 0,mutable.value.book?.shareJobs?.size ?: 0),message=when {e is TodoCloudError || e is IllegalArgumentException->e.message.orEmpty();manual->"网络暂时不可用，已保存到本机，恢复连接后会继续同步";else->mutable.value.message})
             } finally {mutable.value=mutable.value.copy(busy=false);if(networkRetries>0 && failures>0) {nextAttempt=System.currentTimeMillis()+4000;networkRetries--}}
         }}
     }

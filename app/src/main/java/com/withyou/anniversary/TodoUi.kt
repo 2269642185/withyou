@@ -80,11 +80,13 @@ fun TodoScreen(vm:TodoViewModel) {
         }
         item {Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Text(state.syncLabel,Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            if(state.session!=null) TextButton(onClick={vm.sync(true)},enabled=!state.busy) {Text("刷新")}
+            if(state.reauthRequired) TextButton(onClick={page="account"},enabled=!state.busy) {Text("重新登录")}
+            else if(state.session!=null) TextButton(onClick={vm.sync(true)},enabled=!state.busy) {Text("刷新")}
             FilledTonalButton(onClick={editId=null;page="editor"},enabled=!state.busy && !state.failed) {Text("新增事项")}
         }}
         if(state.busy) item {LinearProgressIndicator(Modifier.fillMaxWidth())}
         if(state.message.isNotBlank()) item {Text(state.message,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)}
+        if(state.syncDetail.isNotBlank()) item {SyncDiagnosticButton(state.syncDetail)}
         if(book.conflicts.isNotEmpty()) item {Card {Column(Modifier.padding(16.dp)) {
             Text("有些操作需要你确认",fontWeight=FontWeight.SemiBold)
             book.conflicts.forEach {Text(it,Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodySmall)}

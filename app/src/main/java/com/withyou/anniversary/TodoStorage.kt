@@ -74,18 +74,25 @@ class TodoSessionStore(context:Context) {
             init(KeyGenParameterSpec.Builder("withyou-todo-session",KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }
-    @Synchronized fun save(session:TodoSession?) {
-        if(session==null) {file.delete();return}
+    fun save(session:TodoSession?) = synchronized(sessionLock) {
+        if(session==null) {file.delete();return@synchronized}
         val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply {init(Cipher.ENCRYPT_MODE,key())}
         val bytes=cipher.doFinal(session.json().toString().toByteArray())
         writeAtomic(file,byteArrayOf(cipher.iv.size.toByte())+cipher.iv+bytes)
     }
-    @Synchronized fun read():TodoSession? {
-        if(!file.baseFile.exists() && !File(file.baseFile.path+".bak").exists()) return null
+    fun read():TodoSession? = synchronized(sessionLock) {
+        if(!file.baseFile.exists() && !File(file.baseFile.path+".bak").exists()) return@synchronized null
         val bytes=file.openRead().use {it.readBytes()}; val n=bytes[0].toInt()
         require(n in 12..16 && bytes.size>n+1)
         val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply {init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,bytes.copyOfRange(1,n+1)))}
         val j=JSONObject(String(cipher.doFinal(bytes.copyOfRange(n+1,bytes.size)),Charsets.UTF_8))
-        return TodoSession(j.getString("uid"),j.getString("name"),j.getString("access"),j.getString("refresh"),j.getLong("expires"),j.optBoolean("admitted",true))
+        TodoSession(j.getString("uid"),j.getString("name"),j.getString("access"),j.getString("refresh"),j.getLong("expires"),j.optBoolean("admitted",true))
     }
+    fun replaceIfCurrent(expected:TodoSession,next:TodoSession):Boolean = synchronized(sessionLock) {
+        val saved=read()
+        if(saved?.uid!=expected.uid || saved.refresh!=expected.refresh) false
+        else {save(next);true}
+    }
+    companion object {private val sessionLock=Any()}
+
 }

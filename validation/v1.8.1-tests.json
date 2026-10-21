@@ -1,0 +1,27 @@
+{
+  "version": "1.8.1",
+  "versionCode": 12,
+  "jvm": {
+    "tests": 32,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "api36Emulator": {
+    "tests": 64,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "Warning": 51,
+    "Hint": 1
+  },
+  "sameCertificate": true,
+  "privateFilesPreservedBeforeOpening": 11,
+  "newDeviceTests": 8,
+  "existingCloudBackendUnchanged": true,
+  "physicalPhoneTested": false,
+  "originalPhone400RootCauseConfirmed": false,
+  "published": false
+}

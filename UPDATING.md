@@ -21,7 +21,7 @@ App 通过 GitHub Releases 的 `releases/latest/download/update.json` 读取更�
 3. 生成发布文件：
 
 ```powershell
-python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.apk --notes RELEASE-NOTES.md --version 1.8.0 --code 11 --out release-output/v1.8.0
+python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.apk --notes RELEASE-NOTES.md --version 1.8.1 --code 12 --out release-output/v1.8.1
 ```
 
 4. 将 `release-output/site/` 内容复制至仓库的 `docs/`，提交已验证源码、文档和 docs。不要提交 APK 到 Git 历史。
@@ -30,7 +30,7 @@ python scripts/prepare_release.py --apk app/build/outputs/apk/debug/app-debug.ap
 7. 在上述持续授权范围内，使用已登录 Git 凭据的手动脚本：
 
 ```powershell
-python scripts/github_release.py --bundle release-output/v1.8.0 --commit 实际已推送提交SHA
+python scripts/github_release.py --bundle release-output/v1.8.1 --commit 实际已推送提交SHA
 ```
 
 脚本只在手动运行时发布，没有定时任务、推送触发的版本发布或自动更新签名。若版本标签已存在，不覆盖已有版本；先检查后台是否留下未发布草稿。

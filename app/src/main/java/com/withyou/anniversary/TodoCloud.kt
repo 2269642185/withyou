@@ -7,7 +7,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 
-class TodoCloudError(val status:Int,val reason:String):Exception(when {
+class TodoCloudError(val status:Int,val reason:String,val stage:SyncStage=SyncStage.UNKNOWN,val code:String="",val requestId:String=""):Exception(when {
+    reason.contains("SESSION_CHANGED") -> "登录状态已变化，请重新登录；原账号的待同步记录仍保留"
+    needsReauthentication(status,reason,stage) && !reason.contains("SESSION_REVOKED") -> "登录状态已失效，请重新登录；本机待同步记录会保留"
+    status==0 -> if(code=="TIMEOUT") "连接超时，本机记录已保留，稍后会重试" else "网络暂时不可用，本机记录已保留，恢复连接后会重试"
     reason.contains("SESSION_REVOKED") -> "账号安全状态已更新，请退出后用新密码登录；本机待同步记录会保留"
     reason.contains("FRIEND_INVITE_REQUIRED") -> "请使用朋友发来的注册链接开通账号"
     reason.contains("INVALID_FRIEND_INVITE") -> "注册链接无效、已使用或已过期，请向朋友获取新链接"
@@ -34,13 +37,22 @@ class TodoCloudError(val status:Int,val reason:String):Exception(when {
     reason.contains("captcha") -> "登录需要额外验证，请稍后重试或联系管理员"
     reason.contains("PGRST202") || reason.contains("PGRST205") || status==404 -> "云端打卡服务尚未部署完成"
     status==401 -> "登录已过期，请重新登录；本机待同步记录会保留"
-    else -> "云端请求未完成，请稍后重试（$status）"
-})
+    else -> "${stage.label}未完成（$status），本机记录已保留，可查看同步详情"
+}) {
+    val requiresLogin get()=needsReauthentication(status,reason,stage)
+}
+
+fun interface TodoTransport { suspend fun call(path:String,body:JSONObject,token:String,method:String):JSONObject }
 
 /** CloudBase HTTP Auth API, not Supabase GoTrue endpoints. No administrator credentials. */
-class TodoCloud(private val deviceId:String, private val registrationUrl:String=BuildConfig.CLOUD_REGISTER_URL) {
+class TodoCloud(private val deviceId:String, private val registrationUrl:String=BuildConfig.CLOUD_REGISTER_URL,private val transport:TodoTransport?=null) {
     private val base="https://${BuildConfig.CLOUD_ENV}.api.tcloudbasegateway.com"
     internal suspend fun request(path:String,body:JSONObject,token:String="",absolute:Boolean=false,method:String="POST"):JSONObject=withContext(Dispatchers.IO) {
+        val stage=SyncStage.of(path,body)
+        if(transport!=null) {
+            try {return@withContext transport.call(path,body,token,method)}
+            catch(e:TodoCloudError) {throw if(e.stage==SyncStage.UNKNOWN) TodoCloudError(e.status,e.reason,stage,e.code,e.requestId) else e}
+        }
         val address=if(absolute) path else base+path
         val url=URL(address)
         require(url.protocol=="https" && url.userInfo==null) { "云端连接必须使用 HTTPS" }
@@ -58,9 +70,14 @@ class TodoCloud(private val deviceId:String, private val registrationUrl:String=
                 while(true) {val n=input.read(buffer);if(n<0) break;require(out.size()+n<=8*1024*1024) {"云端数据过大，请联系管理员"};out.write(buffer,0,n)}
                 out.toString("UTF-8")
             }.orEmpty()
-            val result=runCatching {JSONObject(text)}.getOrElse {JSONObject()}
-            if(status !in 200..299) throw TodoCloudError(status,result.str("message")+result.str("error")+result.str("code")+result.str("error_description"))
+            val result=runCatching {JSONObject(text)}.getOrElse {
+                if(status in 200..299 && text.isNotBlank()) throw TodoCloudError(502,"",stage,"INVALID_RESPONSE")
+                JSONObject()
+            }
+            if(status !in 200..299) throw SyncErrorParser.parse(status,result,stage,conn.getHeaderField("x-request-id") ?: conn.getHeaderField("x-tcb-request-id").orEmpty())
             result
+        } catch(e:java.io.IOException) {
+            throw TodoCloudError(0,"",stage,if(e is java.net.SocketTimeoutException) "TIMEOUT" else "NETWORK")
         } finally {conn.disconnect()}
     }
     suspend fun login(username:String,password:String):TodoSession {
@@ -76,13 +93,7 @@ class TodoCloud(private val deviceId:String, private val registrationUrl:String=
     internal suspend fun contact(session:TodoSession)=requestMe(session.access).also {require(it.getString("sub")==session.uid)}.str("email")
     internal suspend fun friendInvite(session:TodoSession,action:String,code:String="",nickname:String="")=
         request("/v1/rdb/rest/rpc/wy_friend_invite",JSONObject().put("action",action).put("code",code).put("nickname",nickname),session.access)
-    private suspend fun requestMe(token:String):JSONObject=withContext(Dispatchers.IO) {
-        val c=(URL("$base/auth/v1/user/me").openConnection() as HttpURLConnection).apply {
-            connectTimeout=12000;readTimeout=15000;instanceFollowRedirects=false
-            setRequestProperty("Authorization","Bearer $token");setRequestProperty("x-device-id",deviceId)
-        }
-        try {if(c.responseCode !in 200..299) throw TodoCloudError(c.responseCode,"");JSONObject(c.inputStream.bufferedReader().use {it.readText()})} finally {c.disconnect()}
-    }
+    private suspend fun requestMe(token:String)=request("/auth/v1/user/me",JSONObject(),token,method="GET")
     suspend fun refresh(session:TodoSession):TodoSession {
         val result=request("/auth/v1/token",JSONObject().put("grant_type","refresh_token").put("refresh_token",session.refresh))
         require(result.optString("sub",session.uid)==session.uid) { "登录身份变化，请重新登录" }
@@ -112,11 +123,14 @@ class TodoCloud(private val deviceId:String, private val registrationUrl:String=
             if(bytes!=null) c.outputStream.use {it.write(bytes)}
             val status=c.responseCode
             if(bytes!=null && status==409) return@withContext byteArrayOf() // Content-addressed immutable object already uploaded.
-            if(status !in 200..299) throw TodoCloudError(status,"PHOTO")
+            if(status !in 200..299) {
+                val text=c.errorStream?.use {input->val bytes=ByteArray(8192);val count=input.read(bytes);if(count>0) String(bytes,0,count,Charsets.UTF_8) else ""}.orEmpty()
+                throw SyncErrorParser.parse(status,runCatching {JSONObject(text)}.getOrDefault(JSONObject()),SyncStage.PHOTO,c.getHeaderField("x-request-id").orEmpty())
+            }
             val out=java.io.ByteArrayOutputStream()
             c.inputStream.use {input->val buffer=ByteArray(8192);while(true) {val n=input.read(buffer);if(n<0) break;require(out.size()+n<=786432) {"共享照片过大"};out.write(buffer,0,n)}}
             out.toByteArray()
-        } finally {c.disconnect()}
+        } catch(e:java.io.IOException) {throw TodoCloudError(0,"",SyncStage.PHOTO,if(e is java.net.SocketTimeoutException) "TIMEOUT" else "NETWORK")} finally {c.disconnect()}
     }
     companion object { fun newDeviceId()=UUID.randomUUID().toString() }
 }
