@@ -9,7 +9,7 @@ data class TodoTask(val id: String = UUID.randomUUID().toString(), val owner: St
     val kind: TodoKind = TodoKind.TODO, val notes: String = "", val due: LocalDate? = null,
     val weekdays: Set<Int> = (1..7).toSet(), val shared: Boolean = false, val pairId: String = "",
     val archived: Boolean = false, val deleted: Boolean = false, val revision: Long = 0)
-data class TodoCheck(val taskId: String, val user: String, val day: LocalDate, val done: Boolean, val revision: Long = 0, val completedOn: LocalDate? = null)
+data class TodoCheck(val taskId: String, val user: String, val day: LocalDate, val done: Boolean, val revision: Long = 0, val completedOn: LocalDate? = null, val completedAt: java.time.Instant? = null)
 data class PairInvite(val id: String, val owner: String, val candidate: String, val name: String, val expires: String)
 data class TodoOperation(val id: String = UUID.randomUUID().toString(), val taskId: String, val body: String)
 data class TodoBook(val uid: String, val pairId: String = "", val partnerId: String = "", val partnerName: String = "伙伴",

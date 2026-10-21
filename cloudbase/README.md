@@ -113,3 +113,11 @@ scripts/cloudbase_backup.py 现在包含共享纪念日元数据；不包含 Sto
 ## 1.7.0 邮箱注册与朋友准入
 
 详见 [email/README.md](email/README.md)。006 原子回填现有身份并增加朋友准入；007 增加业务会话截止时间。真实 QQ/Gmail 收信、原账号绑定、密码恢复和旧会话保护已验证。邮箱通过用户配置的 QQ SMTP 发信，不写入 App 凭据；没有全局每日邮件硬上限。
+
+## 1.8.2 完成时间迁移
+
+已有 001–007 环境执行 `python scripts/cloudbase_sql.py --apply cloudbase/sql/008_check_times.sql`。新增可空 completed_at，不回填旧记录精确时间；更新 wy_apply，保留操作去重、revision、配对和归属检查。兼容未发送时间字段的旧客户端。新客户端发送实际操作 recorded_at，保存为完成时间；取消完成时清空 completed_at。时间由手机提供，不能作为防作弊或可信第三方时间证明。
+
+新的带时间戳离线日常记录可跨日上传，要求操作时间日期与记录日期一致、是计划日且不是未来。旧版无时间戳跨日习惯仍按旧规则停止，不开放补签入口。早期“旧配对或跨日习惯一律停止”的说明属于旧协议；新字段不改动旧配对的停止规则。
+
+本地检查 `node scripts/test_check_times.mjs`，配合原 `test_cloudbase_sql.mjs`；真实数据库可以通过 `scripts/cloudbase_sql.py --apply cloudbase/sql/tests/008_times_rollback.sql` 进行管理 SQL 事务回滚专项。后者只使用临时合成身份，业务行回滚，序列可留下间隙，不是原生 HTTP/Auth 或实体手机联调。

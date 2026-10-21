@@ -84,6 +84,7 @@ internal fun CompactTodoCard(task:TodoTask,book:TodoBook,name:String,date:LocalD
                 Text(if(both) "双方都完成了 ♡" else "$name ${if(done) "✓" else "待完成"} · ${book.partnerName} ${if(partnerDone) "✓" else "待完成"}",
                     style=MaterialTheme.typography.bodySmall,color=ink.onSurfaceVariant)
             }
+            CheckTimes.displayCheck(task,book,date)?.let {CheckTimeLabel(it,date)}
         }
     }
 }

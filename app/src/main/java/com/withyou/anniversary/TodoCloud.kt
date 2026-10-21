@@ -23,6 +23,7 @@ class TodoCloudError(val status:Int,val reason:String,val stage:SyncStage=SyncSt
     reason.contains("email") && (reason.contains("exist") || reason.contains("bound")) -> "此操作暂时无法完成，请尝试登录或找回密码"
     reason.contains("PAIR_CHANGED") -> "配对关系已变化，旧的共享操作已停止"
     reason.contains("DAY_CHANGED") -> "日期已经变化，请在今天的事项中重新打卡"
+    reason.contains("TIME_INVALID") -> "打卡时间与日期不一致，请核对手机时间；本机记录已保留"
     reason.contains("INVALID_INVITE") -> "邀请码无效、已使用或已过期"
     reason.contains("ALREADY_PAIRED") -> "其中一方已经有伙伴，请先解除原配对"
     reason.contains("INVITE_PENDING") -> "你已有待确认的配对申请"

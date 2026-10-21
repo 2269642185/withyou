@@ -68,13 +68,16 @@ fun TodoScreen(vm:TodoViewModel) {
     }
     val paired=book.pairId.isNotBlank()
     val name=state.session?.name ?: "自己"
+    var collectedOpen by rememberSaveable(book.uid) {mutableStateOf(false)}
+    val visibleTasks=book.tasks.filter {!it.deleted && !it.archived && (paired || !it.shared)}
+    val collected=visibleTasks.filter {CheckTimes.collected(it,book,date)}.sortedByDescending {CheckTimes.displayCheck(it,book,date)?.let(CheckTimes::sortTime)}
     var historyId by rememberSaveable {mutableStateOf<String?>(null)}
     var actionTask by remember {mutableStateOf<TodoTask?>(null)}
     var confirmDelete by remember {mutableStateOf<TodoTask?>(null)}
     LazyColumn(Modifier.fillMaxSize().testTag("todo_list"),contentPadding=PaddingValues(horizontal=16.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         item {
             Row(verticalAlignment=Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {Text(if(paired) "把小事，一起坚持" else "把小事，慢慢做好",fontSize=25.sp,fontWeight=FontWeight.SemiBold);Text("${date.monthValue} 月 ${date.dayOfMonth} 日 · 上海时间",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                Column(Modifier.weight(1f)) {Text(if(paired) "把小事，一起坚持" else "把小事，慢慢做好",fontSize=25.sp,fontWeight=FontWeight.SemiBold);Text("${date.monthValue} 月 ${date.dayOfMonth} 日",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
 
             }
         }
@@ -93,9 +96,9 @@ fun TodoScreen(vm:TodoViewModel) {
             TextButton(onClick=vm::acknowledge,enabled=!state.busy) {Text("我已查看")}
         }}}
         item {TodoProgressPanel(book,name,date,state.busy || book.pending.isNotEmpty() || book.shareJobs.isNotEmpty())}
-        val tasks=book.tasks.filter {!it.deleted && !it.archived && (paired || !it.shared)}
+        val tasks=visibleTasks.filterNot {CheckTimes.collected(it,book,date)}
             .sortedWith(compareBy<TodoTask> {!TodoRules.scheduled(it,date)}.thenBy {TodoRules.complete(book,it,it.owner,date)}.thenBy {it.due ?: LocalDate.MAX}.thenBy {it.title})
-        if(tasks.isEmpty()) item {Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        if(visibleTasks.isEmpty()) item {Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Icon(Icons.Outlined.Spa,null,Modifier.size(32.dp),tint=MaterialTheme.colorScheme.primary)
             Text("从一件小事开始",fontWeight=FontWeight.SemiBold,fontSize=21.sp)
             Text(if(book.pairId.isBlank()) "写下一个待办，或选择想坚持的习惯。" else "写下一件想做的小事，与伙伴分享每天的一点进步。")
@@ -110,21 +113,20 @@ fun TodoScreen(vm:TodoViewModel) {
                 {confirmDelete=task;actionTask=null},
                 if(LocalMotionEnabled.current) Modifier.animateItem() else Modifier)
         }
-        item {Text(if(state.session==null) "记录保存在这台设备，历史打卡按上海日期记录。" else "断网时先保存到本机，联网后再同步。历史打卡按上海日期记录。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+        if(collected.isNotEmpty()) {
+            item(key="completed_header") {CompletedHeader(collected.size,collectedOpen) {collectedOpen=!collectedOpen}}
+            if(collectedOpen) items(collected,key={"collected_${it.id}"}) {task ->
+                CompletedTodoRow(task,book,name,date,state.busy || state.failed,
+                    {historyId=task.id},{vm.toggle(task,date)},{editId=task.id;page="editor"},{confirmDelete=task},
+                    if(LocalMotionEnabled.current) Modifier.animateItem() else Modifier)
+            }
+        }
+        item {Text(if(state.session==null) "记录保存在这台设备。" else "断网时先保存到本机，联网后再同步。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
     TodoTogetherCelebration(book,date,state.syncLabel.startsWith("已同步") && !state.busy)
     confirmDelete?.let {task->AlertDialog(onDismissRequest={confirmDelete=null},title={Text("删除这个事项？")},text={Text(if(paired) "删除会同步给伙伴，历史记录不再显示。此操作不可在 App 内恢复。" else "历史记录不再显示，此操作不可在 App 内恢复。")},confirmButton={TextButton(onClick={vm.saveTask(task.copy(deleted=true)) {};confirmDelete=null}) {Text("确认删除")}},dismissButton={TextButton(onClick={confirmDelete=null}) {Text("取消")}})}
-    historyId?.let {id->
-        val checks=book.checks.filter {it.taskId==id && it.done}.sortedByDescending {it.day}
-        AlertDialog(onDismissRequest={historyId=null},title={Text("打卡记录")},text={Column(Modifier.heightIn(max=400.dp).verticalScroll(rememberScrollState())) {
-            book.tasks.find {it.id==id}?.let {task->
-                Text(task.title,fontWeight=FontWeight.SemiBold)
-                if(task.notes.isNotBlank()) Text(task.notes,Modifier.padding(vertical=8.dp))
-            }
-            if(checks.isEmpty()) Text("还没有完成记录")
-            checks.forEach {Text((if(it.day==LocalDate.of(1970,1,1)) "已完成待办" else it.day.label())+" · "+if(it.user==book.uid) name else book.partnerName,Modifier.padding(vertical=6.dp))}
-        }},confirmButton={TextButton(onClick={historyId=null}) {Text("关闭")}})
-    }
+    historyId?.let {id->book.tasks.find {it.id==id}?.let {task ->CheckHistorySheet(task,book,name,date) {historyId=null}}}
+
 }
 
 @Composable

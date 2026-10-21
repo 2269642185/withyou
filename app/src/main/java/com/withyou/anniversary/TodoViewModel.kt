@@ -182,8 +182,11 @@ class TodoViewModel @JvmOverloads constructor(app:Application, suppliedCloud:Tod
         require(date==TodoRules.today() && TodoRules.canCheck(task,book.uid,book.pairId,date)) {"今天不需要打卡，或配对关系已变化"}
         val day=TodoRules.checkDay(task,date)
         val old=book.checks.find {it.taskId==task.id && it.user==book.uid && it.day==day}
-        val value=TodoCheck(task.id,book.uid,day,!(old?.done ?: false),(old?.revision ?: 0)+1,date)
-        val body=JSONObject().put("type","check").put("id",task.id).put("expected",old?.revision ?: 0).put("pair_id",task.pairId).put("day",day.toString()).put("completed_on",date.toString()).put("done",value.done)
+        val stamp=java.time.Instant.now()
+        require(stamp.atZone(TodoRules.zone).toLocalDate()==date) {"日期已变化，请刷新后再打卡"}
+        val done=!(old?.done ?: false)
+        val value=TodoCheck(task.id,book.uid,day,done,(old?.revision ?: 0)+1,if(done) date else null,if(done) stamp else null)
+        val body=JSONObject().put("type","check").put("id",task.id).put("expected",old?.revision ?: 0).put("pair_id",task.pairId).put("day",day.toString()).put("completed_on",date.toString()).put("recorded_at",stamp.toString()).put("completed_at",if(done) stamp.toString() else JSONObject.NULL).put("done",value.done)
         save(book.copy(checks=book.checks.filterNot {it.taskId==task.id && it.user==book.uid && it.day==day}+value,pending=if(book.uid==LOCAL_TODO_UID) emptyList() else book.pending+TodoOperation(taskId=task.id,body=body.toString())))
     }
     fun acknowledge()=act {mutable.value.book?.let {save(it.copy(conflicts=emptyList()))}}
@@ -233,7 +236,7 @@ class TodoViewModel @JvmOverloads constructor(app:Application, suppliedCloud:Tod
                 val visible=snapshot.getJSONArray("visible_ids").let {a->(0 until a.length()).map {a.getString(it)}.toSet()}
                 val safePending=book.pending.filter {op ->
                     val body=JSONObject(op.body);val opPair=body.str("pair_id")
-                    (opPair.isBlank() || opPair==pair && pair.isNotBlank()) && (body.str("type")=="task" || body.str("day")=="1970-01-01" || body.str("day")==snapshot.str("server_day"))
+                    (opPair.isBlank() || opPair==pair && pair.isNotBlank()) && (body.str("type")=="task" || CheckTimes.uploadable(body.str("day"),body.str("recorded_at"),snapshot.str("server_day")))
                 }
                 val dropped=book.pending.size-safePending.size
                 val stoppedDrafts=book.pending.filterNot {it in safePending}.map {op ->
@@ -278,7 +281,7 @@ class TodoViewModel @JvmOverloads constructor(app:Application, suppliedCloud:Tod
                 launcher.confirm(session.uid,merged.pairId.isNotBlank())
                 authorized {syncMemories(it)}
                 failures=0;networkRetries=0;nextAttempt=System.currentTimeMillis()+30000
-                mutable.value=mutable.value.copy(syncLabel="已同步 · 上海时间",syncDetail="",message=if(manual) "同步完成" else "")
+                mutable.value=mutable.value.copy(syncLabel="已同步",syncDetail="",message=if(manual) "同步完成" else "")
             } catch(e:CancellationException) {throw e}
             catch(e:Exception) {
                 failures=(failures+1).coerceAtMost(5);nextAttempt=System.currentTimeMillis()+(30000L shl failures).coerceAtMost(600000)

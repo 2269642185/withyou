@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 const db=new PGlite();
 await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;');
-for(const name of ['001_schema.sql','002_api.sql','005_completion_dates.sql']) await db.exec(fs.readFileSync(new URL('../cloudbase/sql/'+name,import.meta.url),'utf8'));
+for(const name of ['001_schema.sql','002_api.sql','005_completion_dates.sql','008_check_times.sql']) await db.exec(fs.readFileSync(new URL('../cloudbase/sql/'+name,import.meta.url),'utf8'));
 const results=[];
 async function user(uid,query,args=[]) {
  await db.exec('RESET ROLE');
